@@ -116,11 +116,12 @@ unsigned long lastOTACheck = 0;
 String currentFirmwareETag = "";
 
 // Snow effect data
-const int NUM_HEARTS = 40;
+const int NUM_HEARTS = 20;
 struct Heart {
   float x;
   float y;
   float speed;
+  uint8_t size;
 };
 Heart hearts[NUM_HEARTS];
 bool heartsInitialized = false;
@@ -765,6 +766,7 @@ void drawDynamicBackground() {
       hearts[i].x = random(0, 128);
       hearts[i].y = random(0, 64);
       hearts[i].speed = random(2, 15) / 10.0;
+      hearts[i].size = random(1, 6);
     }
     heartsInitialized = true;
   }
@@ -772,20 +774,59 @@ void drawDynamicBackground() {
   for (int i = 0; i < NUM_HEARTS; i++) {
     int x = (int)hearts[i].x;
     int y = (int)hearts[i].y;
+    uint8_t s = hearts[i].size;
 
-    // Draw Heart Shape (3x3)
-    display.drawPixel(x, y, SSD1306_WHITE);
-    display.drawPixel(x + 2, y, SSD1306_WHITE);
-    display.drawPixel(x, y + 1, SSD1306_WHITE);
-    display.drawPixel(x + 1, y + 1, SSD1306_WHITE);
-    display.drawPixel(x + 2, y + 1, SSD1306_WHITE);
-    display.drawPixel(x + 1, y + 2, SSD1306_WHITE);
+    if (s == 1) {
+      // 5x5
+      display.drawPixel(x + 1, y, SSD1306_WHITE); display.drawPixel(x + 3, y, SSD1306_WHITE);
+      display.drawLine(x, y + 1, x + 4, y + 1, SSD1306_WHITE);
+      display.drawLine(x, y + 2, x + 4, y + 2, SSD1306_WHITE);
+      display.drawLine(x + 1, y + 3, x + 3, y + 3, SSD1306_WHITE);
+      display.drawPixel(x + 2, y + 4, SSD1306_WHITE);
+    } else if (s == 2) {
+      // 7x6
+      display.drawLine(x + 1, y, x + 2, y, SSD1306_WHITE); display.drawLine(x + 4, y, x + 5, y, SSD1306_WHITE);
+      display.drawLine(x, y + 1, x + 6, y + 1, SSD1306_WHITE);
+      display.drawLine(x, y + 2, x + 6, y + 2, SSD1306_WHITE);
+      display.drawLine(x + 1, y + 3, x + 5, y + 3, SSD1306_WHITE);
+      display.drawLine(x + 2, y + 4, x + 4, y + 4, SSD1306_WHITE);
+      display.drawPixel(x + 3, y + 5, SSD1306_WHITE);
+    } else if (s == 3) {
+      // 9x8
+      display.drawLine(x + 1, y, x + 3, y, SSD1306_WHITE); display.drawLine(x + 5, y, x + 7, y, SSD1306_WHITE);
+      display.fillRect(x, y + 1, 9, 3, SSD1306_WHITE);
+      display.drawLine(x + 1, y + 4, x + 7, y + 4, SSD1306_WHITE);
+      display.drawLine(x + 2, y + 5, x + 6, y + 5, SSD1306_WHITE);
+      display.drawLine(x + 3, y + 6, x + 5, y + 6, SSD1306_WHITE);
+      display.drawPixel(x + 4, y + 7, SSD1306_WHITE);
+    } else if (s == 4) {
+      // 11x9
+      display.drawLine(x + 1, y, x + 4, y, SSD1306_WHITE); display.drawLine(x + 6, y, x + 9, y, SSD1306_WHITE);
+      display.fillRect(x, y + 1, 11, 4, SSD1306_WHITE);
+      display.drawLine(x + 1, y + 5, x + 9, y + 5, SSD1306_WHITE);
+      display.drawLine(x + 2, y + 6, x + 8, y + 6, SSD1306_WHITE);
+      display.drawLine(x + 3, y + 7, x + 7, y + 7, SSD1306_WHITE);
+      display.drawLine(x + 4, y + 8, x + 6, y + 8, SSD1306_WHITE);
+      display.drawPixel(x + 5, y + 9, SSD1306_WHITE);
+    } else {
+      // 13x11
+      display.drawLine(x + 2, y, x + 5, y, SSD1306_WHITE); display.drawLine(x + 7, y, x + 10, y, SSD1306_WHITE);
+      display.drawLine(x + 1, y + 1, x + 11, y + 1, SSD1306_WHITE);
+      display.fillRect(x, y + 2, 13, 4, SSD1306_WHITE);
+      display.drawLine(x + 1, y + 6, x + 11, y + 6, SSD1306_WHITE);
+      display.drawLine(x + 2, y + 7, x + 10, y + 7, SSD1306_WHITE);
+      display.drawLine(x + 3, y + 8, x + 9, y + 8, SSD1306_WHITE);
+      display.drawLine(x + 4, y + 9, x + 8, y + 9, SSD1306_WHITE);
+      display.drawLine(x + 5, y + 10, x + 7, y + 10, SSD1306_WHITE);
+      display.drawPixel(x + 6, y + 11, SSD1306_WHITE);
+    }
 
     hearts[i].y -= hearts[i].speed;
-    if (hearts[i].y < -3) {
+    if (hearts[i].y < -12) {
       hearts[i].y = 64;
       hearts[i].x = random(0, 128);
       hearts[i].speed = random(2, 15) / 10.0;
+      hearts[i].size = random(1, 6);
     }
   }
 }
