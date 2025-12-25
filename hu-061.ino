@@ -211,8 +211,6 @@ void setup() {
     if (displayInitialized) {
       display.clearDisplay();
       display.setFont(NULL);
-      display.setTextColor(SSD1306_WHITE);
-      display.setTextSize(1);
       display.setCursor(0, 0);
       display.print(F("FW Ver: "));
       display.println(firmwareVersion);
@@ -1444,7 +1442,9 @@ void startOTAUpdate() {
 
   WiFiClientSecure client;
   client.setInsecure();
-  client.setBufferSizes(1024, 1024);
+  // Tăng buffer RX lên 4096 để xử lý TLS Handshake của GitHub (tránh lỗi connection lost)
+  // TX để 512 là đủ cho request
+  client.setBufferSizes(4096, 512);
   
   // Add cache buster
   String url = firmwareUrl;
@@ -1457,12 +1457,33 @@ void startOTAUpdate() {
   t_httpUpdate_return ret = ESPhttpUpdate.update(client, url);
   
   if (ret == HTTP_UPDATE_FAILED) {
-      display.clearDisplay();
-      display.setCursor(0,0);
-      display.println("Update Failed");
-      display.println(ESPhttpUpdate.getLastErrorString());
-      display.display();
-      delay(5000);
+      String error = ESPhttpUpdate.getLastErrorString();
+      
+      // Tính toán sơ bộ chiều cao văn bản để cuộn
+      int charPerLine = 21; // Khoảng 21 ký tự 1 dòng (font size 1)
+      int lines = (error.length() + charPerLine - 1) / charPerLine;
+      int textHeight = lines * 8; 
+      
+      unsigned long startErr = millis();
+      int yPos = 64; // Bắt đầu chạy từ dưới màn hình lên
+      
+      // Hiển thị lỗi trong 10 giây
+      while (millis() - startErr < 10000) {
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.println("Update Failed:");
+        display.drawLine(0, 9, 128, 9, SSD1306_WHITE);
+        
+        display.setCursor(0, yPos);
+        display.print(error);
+        display.display();
+        
+        yPos--; // Dịch chuyển chữ lên trên
+        // Nếu chạy hết nội dung thì lặp lại từ dưới
+        if (yPos < -textHeight) yPos = 64;
+        
+        delay(40); // Tốc độ cuộn
+      }
       ESP.restart();
   }
 }
