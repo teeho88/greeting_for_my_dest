@@ -60,6 +60,7 @@ const int ADDR_SIGNATURE = 600;  // 4-byte signature "CFG1" to indicate valid co
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
+const String firmwareVersion = "v1.0.1";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -153,7 +154,8 @@ void setup() {
       display.setRotation(2);
       display.clearDisplay();
       display.setTextColor(SSD1306_WHITE);
-      display.print("Booting...");
+      display.println("Booting...");
+      display.println(firmwareVersion);
       display.display();
       displayReady = true;
     } else {
