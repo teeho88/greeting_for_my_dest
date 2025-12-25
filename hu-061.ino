@@ -61,7 +61,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.0";
+const String firmwareVersion = "v1.1.1";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -155,7 +155,7 @@ void setup() {
       display.setRotation(2);
       display.clearDisplay();
       display.setTextColor(SSD1306_WHITE);
-      display.println("Booting...");
+      display.println(F("Booting..."));
       display.display();
       displayReady = true;
     } else {
@@ -219,9 +219,9 @@ void setup() {
       display.clearDisplay();
       display.setFont(NULL);
       display.setCursor(0, 0);
-      display.print(F("FW Ver: "));
+      display.print(F("FW Ver: ")); // Already F()
       display.println(firmwareVersion);
-      display.println(F("Connecting to WiFi:"));
+      display.println(F("Connecting to WiFi:")); // Already F()
       display.println(wifiSSID);
       display.display();
     }
@@ -241,7 +241,7 @@ void setup() {
     if (WiFi.status() == WL_CONNECTED) {
       if (displayInitialized) {
         display.println();
-        display.println(F("Connected!"));
+        display.println(F("Connected!")); // Already F()
         display.display();
       }
     } else {
@@ -255,7 +255,7 @@ void setup() {
     timeClient.begin();
 
     if (displayInitialized) {
-      display.println(F("Syncing Time..."));
+      display.println(F("Syncing Time...")); // Already F()
       display.display();
     }
     // Perform initial NTP update
@@ -267,7 +267,7 @@ void setup() {
   }
 
   if (displayInitialized) {
-    display.println(F("Fetching Data..."));
+    display.println(F("Fetching Data...")); // Already F()
     display.display();
   }
 
@@ -334,7 +334,7 @@ void loop() {
           // Config Mode: Click to return to Normal Mode (Reboot)
           display.clearDisplay();
           display.setCursor(0, 0);
-          display.println("Exit Config Mode");
+          display.println(F("Exit Config Mode"));
           display.display();
           delay(1000);
           ESP.restart();
@@ -346,7 +346,7 @@ void loop() {
           // Update Mode Click: Exit/Reboot
           display.clearDisplay();
           display.setCursor(0, 0);
-          display.println("Exit Update Mode");
+          display.println(F("Exit Update Mode"));
           display.display();
           delay(1000);
           ESP.restart();
@@ -451,11 +451,11 @@ void startConfigPortal() {
       display.setFont(NULL);
       display.setTextSize(1);
       display.setCursor(0, 0);
-      display.println("AP mode");
+      display.println(F("AP mode"));
       display.setCursor(0, 10);
-      display.println("SSID: " + String(AP_SSID));
+      display.println(F("SSID: ") + String(AP_SSID));
       display.setCursor(0, 20);
-      display.println("IP: 192.168.4.1");
+      display.println(F("IP: 192.168.4.1"));
       display.display();
     }
 
@@ -464,48 +464,51 @@ void startConfigPortal() {
     server.on("/", HTTP_GET, []() {
     if (systemMode == 1) {
     // HTML page for config
-    String page = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
-    page += String("<title>ESP8266 Setup</title><style>") +
-            ".container{max-width:300px;margin:40px auto;padding:20px;background:#f7f7f7;border:1px solid #ccc;border-radius:5px;}" +
-            "body{text-align:center;font-family:sans-serif;}h2{margin-bottom:15px;}label{display:block;text-align:left;margin-top:10px;}" +
-            "input, select{width:100%;padding:8px;margin-top:5px;border:1px solid #ccc;border-radius:3px;}" +
-            "input[type=submit]{margin-top:15px;background:#4caf50;color:white;border:none;cursor:pointer;border-radius:3px;font-size:16px;}" +
-            "input[type=submit]:hover{background:#45a049;}" +
-            "</style></head><body><div class='container'>";
-    page += "<h2>Device Configuration</h2><form method='POST' action='/'>";
+    String page;
+    page.reserve(2048);
+    page = F("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
+    page += F("<title>ESP8266 Setup</title><style>");
+    page += F(".container{max-width:300px;margin:40px auto;padding:20px;background:#f7f7f7;border:1px solid #ccc;border-radius:5px;}");
+    page += F("body{text-align:center;font-family:sans-serif;}h2{margin-bottom:15px;}label{display:block;text-align:left;margin-top:10px;}");
+    page += F("input, select{width:100%;padding:8px;margin-top:5px;border:1px solid #ccc;border-radius:3px;}");
+    page += F("input[type=submit]{margin-top:15px;background:#4caf50;color:white;border:none;cursor:pointer;border-radius:3px;font-size:16px;}");
+    page += F("input[type=submit]:hover{background:#45a049;}");
+    page += F("</style></head><body><div class='container'>");
+    page += F("<h2>Device Configuration</h2><form method='POST' action='/'>");
     // WiFi SSID field
-    page += "<label>Wi-Fi SSID:</label><input type='text' name='ssid' value='" + wifiSSID + "' required>";
+    page += F("<label>Wi-Fi SSID:</label><input type='text' name='ssid' value='") + wifiSSID + F("' required>");
     // Password field
-    page += "<label>Password:</label><input type='password' name='pass' value='" + wifiPass + "' placeholder=''>";
+    page += F("<label>Password:</label><input type='password' name='pass' value='") + wifiPass + F("' placeholder=''>");
     // City field
-    page += "<label>City:</label><input type='text' name='city' value='" + city + "' required>";
-    page += "<label>Greeting URL (Gist Raw):</label><input type='text' name='greeting' value='" + greetingUrl + "'>";
-    page += "<label>Firmware URL (.bin):</label><input type='text' name='firmware' value='" + firmwareUrl + "'>";
+    page += F("<label>City:</label><input type='text' name='city' value='") + city + F("' required>");
+    page += F("<label>Greeting URL (Gist Raw):</label><input type='text' name='greeting' value='") + greetingUrl + F("'>");
+    page += F("<label>Firmware URL (.bin):</label><input type='text' name='firmware' value='") + firmwareUrl + F("'>");
     // Timezone dropdown
-    page += "<label>Timezone:</label><select name='tz'>";
+    page += F("<label>Timezone:</label><select name='tz'>");
     // Populate timezone options from UTC-12 to UTC+14
     for (int tzHour = -12; tzHour <= 14; ++tzHour) {
       long tzSeconds = tzHour * 3600;
-      String option = "<option value='" + String(tzSeconds) + "'";
+      String option = F("<option value='");
+      option += String(tzSeconds) + "'";
       if (tzSeconds == timezoneOffset) {
-        option += " selected";
+        option += F(" selected");
       }
-      option += ">UTC";
-      if (tzHour >= 0) option += "+" + String(tzHour);
+      option += F(">UTC");
+      if (tzHour >= 0) option += F("+") + String(tzHour);
       else option += String(tzHour);
-      option += "</option>";
+      option += F("</option>");
       page += option;
     }
-    page += "</select>";
+    page += F("</select>");
     // Submit button
-    page += "<input type='submit' value='Save'></form></div></body></html>";
+    page += F("<input type='submit' value='Save'></form></div></body></html>");
     server.send(200, "text/html", page);
     } else if (systemMode == 2) {
       // HTML page for Update
-      String page = "<!DOCTYPE html><html><body><h2>Firmware Update</h2>";
-      page += "<form method='POST' action='/update' enctype='multipart/form-data'>";
-      page += "<input type='file' name='update'><br><br>";
-      page += "<input type='submit' value='Update'></form></body></html>";
+      String page = F("<!DOCTYPE html><html><body><h2>Firmware Update</h2>");
+      page += F("<form method='POST' action='/update' enctype='multipart/form-data'>");
+      page += F("<input type='file' name='update'><br><br>");
+      page += F("<input type='submit' value='Update'></form></body></html>");
       server.send(200, "text/html", page);
     }
     });
@@ -545,9 +548,9 @@ void startUpdatePortal() {
   display.clearDisplay();
   display.setFont(NULL);
   display.setCursor(0, 0);
-  display.println("Update Mode");
-  display.println("IP: 192.168.4.1");
-  display.println("Upload .bin file");
+  display.println(F("Update Mode"));
+  display.println(F("IP: 192.168.4.1"));
+  display.println(F("Upload .bin file"));
   display.display();
 }
 
@@ -570,11 +573,11 @@ void handleConfigForm() {
     // Save to EEPROM
     saveSettings();
     // Send response page
-    server.send(200, "text/html", "<html><body><h3>Settings saved. Rebooting...</h3></body></html>");
+    server.send(200, "text/html", F("<html><body><h3>Settings saved. Rebooting...</h3></body></html>"));
     delay(1000);
     ESP.restart();
   } else {
-    server.send(400, "text/html", "<html><body><h3>Invalid input, please fill all required fields.</h3></body></html>");
+    server.send(400, "text/html", F("<html><body><h3>Invalid input, please fill all required fields.</h3></body></html>"));
   }
 }
 
@@ -736,21 +739,21 @@ void drawSleepConfirmScreen() {
   
   // Question
   display.setCursor(0, 0);
-  display.println("Cun co muon tat");
-  display.println("dong ho?");
+  display.println(F("Cun co muon tat"));
+  display.println(F("dong ho?"));
   
   // Options
   int yPos = 40;
   
   // Option "Có"
   display.setCursor(20, yPos);
-  if (sleepSelectedYes) display.print("> ");
-  display.print("Co");
+  if (sleepSelectedYes) display.print(F("> "));
+  display.print(F("Co"));
   
   // Option "Không"
   display.setCursor(80, yPos);
-  if (!sleepSelectedYes) display.print("> ");
-  display.print("Khong");
+  if (!sleepSelectedYes) display.print(F("> "));
+  display.print(F("Khong"));
 
   display.display();
 }
@@ -795,13 +798,13 @@ void drawTimeScreen() {
   int wday = tm->tm_wday;  // tm_wday: days since Sunday (0-6)
   String dayName = "";
   switch(wday) {
-    case 0: dayName = "Sunday"; break;
-    case 1: dayName = "Monday"; break;
-    case 2: dayName = "Tuesday"; break;
-    case 3: dayName = "Wednesday"; break;
-    case 4: dayName = "Thursday"; break;
-    case 5: dayName = "Friday"; break;
-    case 6: dayName = "Saturday"; break;
+    case 0: dayName = F("Sunday"); break;
+    case 1: dayName = F("Monday"); break;
+    case 2: dayName = F("Tuesday"); break;
+    case 3: dayName = F("Wednesday"); break;
+    case 4: dayName = F("Thursday"); break;
+    case 5: dayName = F("Friday"); break;
+    case 6: dayName = F("Saturday"); break;
   }
   display.setFont(NULL); // default font
   int16_t x1, y1;
@@ -833,10 +836,10 @@ void drawTimeScreen() {
     tempDisplay.trim();
     display.print(tempDisplay);
     display.print((char)247); // degree symbol
-    display.print("C ");
+    display.print(F("C "));
     display.print(weatherHum);
   } else {
-    display.print("N/A");
+    display.print(F("N/A"));
   }
 
   // Bottom right: date dd.mm.yyyy
@@ -892,11 +895,11 @@ void drawWeatherScreen() {
     display.drawCircle(degX, degY, 2, SSD1306_WHITE);
     display.setCursor(degX + 3, tempY);
     display.setFont(&FreeMonoBold12pt7b);    
-    display.print("C");
+    display.print(F("C"));
     display.setFont(NULL);
   } else {
     // If weather not available, show N/A in big font
-    String na = "N/A";
+    String na = F("N/A");
     display.getTextBounds(na, 0, 30, &x1, &y1, &w, &h);
     int naX = (128 - w) / 2;
     display.setCursor(naX, 30);
@@ -914,15 +917,15 @@ void drawWeatherScreen() {
   // Bottom right: H:% W:m/s P:mm
   display.setFont(NULL);
   if (weatherValid && weatherTemp != "N/A") {
-    String bottomStr = String("H:") + weatherHum;
-    bottomStr += " W:" + weatherWind;
-    if (weatherWind != "N/A") bottomStr += "m/s";
-    bottomStr += " P:" + weatherPress + "mm";
+    String bottomStr = String(F("H:")) + weatherHum;
+    bottomStr += F(" W:") + weatherWind;
+    if (weatherWind != "N/A") bottomStr += F("m/s");
+    bottomStr += F(" P:") + weatherPress + F("mm");
     display.getTextBounds(bottomStr, 0, 56, &x1, &y1, &w, &h);
     display.setCursor(128 - w, 56);
     display.print(bottomStr);
   } else {
-    String bottomStr = "H:N/A W:N/A P:N/A";
+    String bottomStr = F("H:N/A W:N/A P:N/A");
     display.getTextBounds(bottomStr, 0, 56, &x1, &y1, &w, &h);
     display.setCursor(128 - w, 56);
     display.print(bottomStr);
@@ -955,7 +958,7 @@ void drawForecastScreen() {
   display.setFont(NULL);
   
   display.setCursor(0, 0);
-  display.println("3-Day Forecast");
+  display.println(F("3-Day Forecast"));
   display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
 
   if (forecastValid) {
@@ -976,7 +979,7 @@ void drawForecastScreen() {
     }
   } else {
     display.setCursor(0, 20);
-    display.println("Loading...");
+    display.println(F("Loading..."));
   }
   display.display();
 }
@@ -1006,7 +1009,7 @@ void drawLuckyNumberScreen() {
   
   // Title
   display.setFont(NULL);
-  String title = "So may man cua em yeu ngay hom nay \x03\x03\x03";
+  String title = F("So may man cua em yeu ngay hom nay \x03\x03\x03");
   int16_t x1, y1; uint16_t w, h;
   display.getTextBounds(title, 0, 0, &x1, &y1, &w, &h);
   display.setCursor(scrollX, 0);
@@ -1055,12 +1058,12 @@ void drawGreetingScreen() {
   // Title
   display.setFont(NULL);
   display.setCursor(0, 0);
-  display.println("Greeting");
+  display.println(F("Greeting"));
   display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
 
   // Content
   display.setFont(&FreeMonoBold12pt7b);
-  String text = (greetingUrl == "") ? "No URL Configured" : currentGreeting;
+  String text = (greetingUrl == "") ? String(F("No URL Configured")) : currentGreeting;
   
   int16_t x1, y1; uint16_t w, h;
   display.getTextBounds(text, 0, 40, &x1, &y1, &w, &h);
@@ -1092,10 +1095,10 @@ bool getWeather() {
   }
 
   // Send GET request
-  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-               "Host: " + host + "\r\n" +
-               "User-Agent: ESP8266\r\n" +
-               "Connection: close\r\n\r\n");
+  client.print(String(F("GET ")) + url + F(" HTTP/1.1\r\n") +
+               F("Host: ") + host + F("\r\n") +
+               F("User-Agent: ESP8266\r\n") +
+               F("Connection: close\r\n\r\n"));
 
   // Skip headers
   if (!client.find("\r\n\r\n")) return false;
@@ -1218,10 +1221,10 @@ bool getForecast() {
 
   if (!client.connect(host, 443)) return false;
 
-  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-               "Host: " + host + "\r\n" +
-               "User-Agent: ESP8266\r\n" +
-               "Connection: close\r\n\r\n");
+  client.print(String(F("GET ")) + url + F(" HTTP/1.1\r\n") +
+               F("Host: ") + host + F("\r\n") +
+               F("User-Agent: ESP8266\r\n") +
+               F("Connection: close\r\n\r\n"));
 
   // Skip headers
   while (client.connected()) {
@@ -1284,11 +1287,11 @@ bool getForecast() {
     // Construct full text
     // Format: "MM-DD: min/max C, Sang: ..., Trua: ..., Chieu: ..., Toi: ..."
     String d = date.substring(5);
-    String text = d + ": " + minT + "/" + maxT + String((char)247) + "C";
-    text += ", Morn: " + removeAccents(morn);
-    text += ", Noon: " + removeAccents(noon);
-    text += ", Aft: " + removeAccents(aft);
-    text += ", Eve: " + removeAccents(eve);
+    String text = d + F(": ") + minT + F("/") + maxT + String((char)247) + F("C");
+    text += F(", Morn: ") + removeAccents(morn);
+    text += F(", Noon: ") + removeAccents(noon);
+    text += F(", Aft: ") + removeAccents(aft);
+    text += F(", Eve: ") + removeAccents(eve);
     
     forecasts[i].fullText = text;
   }
@@ -1426,11 +1429,11 @@ void startOTAUpdate(String targetETag) {
   display.clearDisplay();
   display.setFont(NULL);
   display.setCursor(0, 0);
-  display.println("OTA GitHub Mode");
+  display.println(F("OTA GitHub Mode"));
   display.display();
 
   // Debug: Print initial Heap
-  display.print("Heap: "); display.println(ESP.getFreeHeap());
+  display.print(F("Heap: ")); display.println(ESP.getFreeHeap());
   display.display();
 
   // Free up memory to ensure stable update
@@ -1441,7 +1444,7 @@ void startOTAUpdate(String targetETag) {
   weatherHum = "";
 
   if (WiFi.status() != WL_CONNECTED) {
-    display.println("Connecting WiFi...");
+    display.println(F("Connecting WiFi..."));
     display.display();
     WiFi.mode(WIFI_STA);
     WiFi.begin(wifiSSID.c_str(), wifiPass.c_str());
@@ -1454,7 +1457,7 @@ void startOTAUpdate(String targetETag) {
     }
     
     if (WiFi.status() != WL_CONNECTED) {
-      display.println("\nWiFi Failed!");
+      display.println(F("\nWiFi Failed!"));
       display.display();
       delay(2000);
       ESP.restart();
@@ -1462,12 +1465,12 @@ void startOTAUpdate(String targetETag) {
     }
   }
   
-  display.println("\nDownloading...");
-  display.print("URL: "); display.println(firmwareUrl.substring(0, 10) + "...");
+  display.println(F("\nDownloading..."));
+  display.print(F("URL: ")); display.println(firmwareUrl.substring(0, 10) + "...");
   display.display();
   
   if (firmwareUrl == "") {
-     display.println("No URL set!");
+     display.println(F("No URL set!"));
      display.display();
      delay(2000);
      ESP.restart();
@@ -1488,11 +1491,11 @@ void startOTAUpdate(String targetETag) {
   if (url.indexOf('?') == -1) url += "?t=" + String(millis());
   else url += "&t=" + String(millis());
 
-  display.println("Connecting...");
+  display.println(F("Connecting..."));
   display.display();
 
   if (!http.begin(client, url)) {
-    display.println("Connect Fail");
+    display.println(F("Connect Fail"));
     display.display();
     delay(5000);
     ESP.restart();
@@ -1501,7 +1504,7 @@ void startOTAUpdate(String targetETag) {
 
   int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
-    display.print("HTTP Err: "); display.println(httpCode);
+    display.print(F("HTTP Err: ")); display.println(httpCode);
     display.display();
     delay(5000);
     ESP.restart();
@@ -1513,8 +1516,8 @@ void startOTAUpdate(String targetETag) {
   size_t updateSize = (contentLength > 0) ? contentLength : ((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000);
   
   if (!Update.begin(updateSize)) {
-    display.println("Update.begin Fail");
-    display.print("Err: "); display.println(Update.getError());
+    display.println(F("Update.begin Fail"));
+    display.print(F("Err: ")); display.println(Update.getError());
     display.display();
     delay(5000);
     ESP.restart();
@@ -1522,7 +1525,7 @@ void startOTAUpdate(String targetETag) {
   }
 
   WiFiClient * stream = http.getStreamPtr();
-  uint8_t buff[128];
+  uint8_t buff[1024];
   int received = 0;
   unsigned long lastDraw = 0;
 
@@ -1532,7 +1535,7 @@ void startOTAUpdate(String targetETag) {
       // Đọc tối đa 128 byte mỗi lần
       int c = stream->readBytes(buff, ((size > sizeof(buff)) ? sizeof(buff) : size));
       if (Update.write(buff, c) != c) {
-         display.println("Write Error");
+         display.println(F("Write Error"));
          display.display();
          break;
       }
@@ -1543,15 +1546,15 @@ void startOTAUpdate(String targetETag) {
         lastDraw = millis();
         display.clearDisplay();
         display.setCursor(0, 0);
-        display.println("OTA Stream:");
-        display.print("Rx: "); display.println(received);
+        display.println(F("OTA Stream:"));
+        display.print(F("Rx: ")); display.println(received);
         if (contentLength > 0) {
            int pct = (received * 100) / contentLength;
-           display.print("Pct: "); display.print(pct); display.println("%");
+           display.print(F("Percents: ")); display.print(pct); display.println(F("%"));
         } else {
-           display.println("Mode: Chunked");
+           display.println(F("Mode: Chunked"));
         }
-        display.print("Heap: "); display.println(ESP.getFreeHeap());
+        display.print(F("Heap: ")); display.println(ESP.getFreeHeap());
         display.display();
       }
     } else {
@@ -1573,15 +1576,15 @@ void startOTAUpdate(String targetETag) {
       }
       display.clearDisplay();
       display.setCursor(0,0);
-      display.println("Update Success!");
+      display.println(F("Update Success!"));
       display.display();
       delay(1000);
       ESP.restart();
   } else {
       display.clearDisplay();
       display.setCursor(0,0);
-      display.println("Update Failed");
-      display.print("Err: "); display.println(Update.getError());
+      display.println(F("Update Failed"));
+      display.print(F("Err: ")); display.println(Update.getError());
       display.display();
       delay(5000);
       ESP.restart();
