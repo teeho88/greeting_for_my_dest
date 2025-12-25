@@ -1476,78 +1476,92 @@ void startOTAUpdate(String targetETag) {
 
   WiFiClientSecure client;
   client.setInsecure();
-  // Tăng buffer RX lên 4096 để xử lý TLS Handshake của GitHub (tránh lỗi connection lost)
+  // Tăng buffer RX lên 16KB (16384) vì Heap đang dư dả (42KB), giúp GitHub ổn định hơn
   // TX để 512 là đủ cho request
-  client.setBufferSizes(4096, 512);
-  client.setTimeout(15000);
+  client.setBufferSizes(16384, 512);
+  client.setTimeout(20000);
   
-  // Add cache buster
+  HTTPClient http;
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
   String url = firmwareUrl;
   if (url.indexOf('?') == -1) url += "?t=" + String(millis());
   else url += "&t=" + String(millis());
 
-  ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
-  ESPhttpUpdate.rebootOnUpdate(false);
+  display.println("Connecting...");
+  display.display();
+
+  if (!http.begin(client, url)) {
+    display.println("Connect Fail");
+    display.display();
+    delay(5000);
+    ESP.restart();
+    return;
+  }
+
+  int httpCode = http.GET();
+  if (httpCode != HTTP_CODE_OK) {
+    display.print("HTTP Err: "); display.println(httpCode);
+    display.display();
+    delay(5000);
+    ESP.restart();
+    return;
+  }
+
+  int contentLength = http.getSize();
+  // Nếu không biết kích thước (chunked), giả định kích thước tối đa
+  size_t updateSize = (contentLength > 0) ? contentLength : ((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000);
   
-  // Debug Callback: Show raw bytes and heap
-  ESPhttpUpdate.onProgress([](int cur, int total) {
-    static unsigned long lastDraw = 0;
-    // Throttle display updates to avoid I2C hanging the network (max 5fps)
-    if (millis() - lastDraw > 200) {
-      lastDraw = millis();
-      display.clearDisplay();
-      display.setCursor(0, 0);
-      display.println("OTA Debug:");
-      
-      display.print("C: "); display.println(cur);
-      display.print("T: "); display.println(total);
-      
-      if (total > 0) {
-        int pct = (cur * 100) / total;
-        display.print("Pct: "); display.print(pct); display.println("%");
-      } else {
-        display.println("Mode: Chunked");
+  if (!Update.begin(updateSize)) {
+    display.println("Update.begin Fail");
+    display.print("Err: "); display.println(Update.getError());
+    display.display();
+    delay(5000);
+    ESP.restart();
+    return;
+  }
+
+  WiFiClient * stream = http.getStreamPtr();
+  uint8_t buff[128];
+  int received = 0;
+  unsigned long lastDraw = 0;
+
+  while (http.connected() || stream->available()) {
+    size_t size = stream->available();
+    if (size) {
+      // Đọc tối đa 128 byte mỗi lần
+      int c = stream->readBytes(buff, ((size > sizeof(buff)) ? sizeof(buff) : size));
+      if (Update.write(buff, c) != c) {
+         display.println("Write Error");
+         display.display();
+         break;
       }
-      
-      display.print("Heap: "); display.println(ESP.getFreeHeap());
-      display.display();
-    }
-    yield(); // Feed WDT
-  });
-  
-  // This function will block until update is complete or fails
-  t_httpUpdate_return ret = ESPhttpUpdate.update(client, url);
-  
-  if (ret == HTTP_UPDATE_FAILED) {
-      String error = ESPhttpUpdate.getLastErrorString();
-      
-      // Tính toán sơ bộ chiều cao văn bản để cuộn
-      int charPerLine = 21; // Khoảng 21 ký tự 1 dòng (font size 1)
-      int lines = (error.length() + charPerLine - 1) / charPerLine;
-      int textHeight = lines * 8; 
-      
-      unsigned long startErr = millis();
-      int yPos = 64; // Bắt đầu chạy từ dưới màn hình lên
-      
-      // Hiển thị lỗi trong 10 giây
-      while (millis() - startErr < 10000) {
+      received += c;
+
+      // Cập nhật màn hình (giới hạn 5fps để không làm chậm mạng)
+      if (millis() - lastDraw > 200) {
+        lastDraw = millis();
         display.clearDisplay();
         display.setCursor(0, 0);
-        display.println("Update Failed:");
-        display.drawLine(0, 9, 128, 9, SSD1306_WHITE);
-        
-        display.setCursor(0, yPos);
-        display.print(error);
+        display.println("OTA Stream:");
+        display.print("Rx: "); display.println(received);
+        if (contentLength > 0) {
+           int pct = (received * 100) / contentLength;
+           display.print("Pct: "); display.print(pct); display.println("%");
+        } else {
+           display.println("Mode: Chunked");
+        }
+        display.print("Heap: "); display.println(ESP.getFreeHeap());
         display.display();
-        
-        yPos--; // Dịch chuyển chữ lên trên
-        // Nếu chạy hết nội dung thì lặp lại từ dưới
-        if (yPos < -textHeight) yPos = 64;
-        
-        delay(40); // Tốc độ cuộn
       }
-      ESP.restart();
-  } else if (ret == HTTP_UPDATE_OK) {
+    } else {
+      delay(1);
+    }
+    // Nếu đã tải đủ dung lượng (trường hợp không chunked) thì thoát
+    if (contentLength > 0 && received >= contentLength) break;
+  }
+
+  if (Update.end(true)) {
       if (targetETag != "") {
         int len = targetETag.length();
         if (len > 90) len = 90;
@@ -1557,9 +1571,20 @@ void startOTAUpdate(String targetETag) {
         }
         EEPROM.commit();
       }
-      display.println("Update OK");
+      display.clearDisplay();
+      display.setCursor(0,0);
+      display.println("Update Success!");
       display.display();
       delay(1000);
       ESP.restart();
+  } else {
+      display.clearDisplay();
+      display.setCursor(0,0);
+      display.println("Update Failed");
+      display.print("Err: "); display.println(Update.getError());
+      display.display();
+      delay(5000);
+      ESP.restart();
   }
+  http.end();
 }
