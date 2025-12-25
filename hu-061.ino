@@ -61,7 +61,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.0.0";
+const String firmwareVersion = "v1.1.0";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -1458,6 +1458,7 @@ void startOTAUpdate(String targetETag) {
   // Tăng buffer RX lên 4096 để xử lý TLS Handshake của GitHub (tránh lỗi connection lost)
   // TX để 512 là đủ cho request
   client.setBufferSizes(4096, 512);
+  client.setTimeout(10000);
   
   // Add cache buster
   String url = firmwareUrl;
@@ -1468,20 +1469,41 @@ void startOTAUpdate(String targetETag) {
   ESPhttpUpdate.rebootOnUpdate(false);
   
   int lastPercent = -1;
-  ESPhttpUpdate.onProgress([&lastPercent](int cur, int total) {
-    if (total <= 0) return;
-    int percent = (cur * 100) / total;
-    if (percent != lastPercent) {
-      lastPercent = percent;
+  int lastBytes = 0;
+  ESPhttpUpdate.onProgress([&lastPercent, &lastBytes](int cur, int total) {
+    bool shouldDraw = false;
+    int percent = 0;
+
+    if (total > 0) {
+       percent = (cur * 100) / total;
+       if (percent != lastPercent) {
+         lastPercent = percent;
+         shouldDraw = true;
+       }
+    } else {
+       // Chunked encoding (total=0): Update every ~1KB
+       if (cur - lastBytes >= 1024 || cur < lastBytes) {
+         lastBytes = cur;
+         shouldDraw = true;
+       }
+    }
+
+    if (shouldDraw) {
       display.clearDisplay();
       display.setCursor(0, 0);
       display.println("Downloading...");
-      // Draw Progress Bar
-      display.drawRect(0, 20, 128, 12, SSD1306_WHITE);
-      display.fillRect(2, 22, map(percent, 0, 100, 0, 124), 8, SSD1306_WHITE);
-      // Draw Text
-      display.setCursor(54, 36);
-      display.print(String(percent) + "%");
+      
+      if (total > 0) {
+        // Draw Progress Bar
+        display.drawRect(0, 20, 128, 12, SSD1306_WHITE);
+        display.fillRect(2, 22, map(percent, 0, 100, 0, 124), 8, SSD1306_WHITE);
+        display.setCursor(54, 36);
+        display.print(String(percent) + "%");
+      } else {
+        // Show bytes downloaded for Chunked encoding
+        display.setCursor(0, 25);
+        display.print(String(cur / 1024) + " KB");
+      }
       display.display();
     }
   });
