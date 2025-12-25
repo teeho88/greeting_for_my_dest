@@ -61,7 +61,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.2";
+const String firmwareVersion = "v1.1.3";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -1326,6 +1326,8 @@ void handleForecastTask() {
         forecastClient.setInsecure();
         // Buffer lớn hơn cho JSON
         forecastClient.setBufferSizes(2048, 512);
+        forecastResponseBuffer = "";
+        forecastResponseBuffer.reserve(8192);
         if (forecastClient.connect("wttr.in", 443)) {
            String encodedCity = city;
            encodedCity.replace(" ", "%20");
@@ -1335,7 +1337,6 @@ void handleForecastTask() {
                                 "Connection: close\r\n\r\n");
            forecastTaskState = F_WAIT_HEADER;
            forecastTaskTimer = millis();
-           forecastResponseBuffer = "";
         } else {
            forecastTaskState = F_IDLE;
            lastForecastFetch = millis() - 3540000UL; // Retry in 1 min
@@ -1362,15 +1363,15 @@ void handleForecastTask() {
         if (millis() - startLoop > 5) break; // Limit blocking time
       }
 
-      if (!forecastClient.connected() && !forecastClient.available()) {
-        parseForecastData(forecastResponseBuffer);
+      // Check for completion or timeout (increased to 15s)
+      bool timeout = (millis() - forecastTaskTimer > 15000);
+      if ((!forecastClient.connected() && !forecastClient.available()) || timeout) {
+        if (forecastResponseBuffer.length() > 0) {
+          parseForecastData(forecastResponseBuffer);
+          forecastValid = true;
+        }
         forecastClient.stop();
-        forecastValid = true;
         lastForecastFetch = millis();
-        forecastTaskState = F_IDLE;
-      }
-      if (millis() - forecastTaskTimer > 10000) {
-        forecastClient.stop();
         forecastTaskState = F_IDLE;
       }
       break;
@@ -1398,6 +1399,24 @@ void parseForecastData(String data) {
     int dateEnd = data.indexOf("\"", dateStart);
     String date = data.substring(dateStart, dateEnd);
     currentPos = dateEnd;
+
+    // Extract Max Temp (Search from date position)
+    int maxKey = data.indexOf("\"maxtempC\":", currentPos);
+    String maxT = "N/A";
+    if (maxKey != -1) {
+      int maxStart = data.indexOf("\"", maxKey + 11) + 1;
+      int maxEnd = data.indexOf("\"", maxStart);
+      maxT = data.substring(maxStart, maxEnd);
+    }
+
+    // Extract Min Temp (Search from date position)
+    int minKey = data.indexOf("\"mintempC\":", currentPos);
+    String minT = "N/A";
+    if (minKey != -1) {
+      int minStart = data.indexOf("\"", minKey + 11) + 1;
+      int minEnd = data.indexOf("\"", minStart);
+      minT = data.substring(minStart, minEnd);
+    }
 
     // Extract Hourly descriptions
     String morn = "", noon = "", aft = "", eve = "";
@@ -1434,22 +1453,6 @@ void parseForecastData(String data) {
         else if (timeVal == "2100") eve = desc;
       }
     }
-
-    // Extract Max Temp
-    int maxKey = data.indexOf("\"maxtempC\":", currentPos);
-    if (maxKey == -1) break;
-    int maxStart = data.indexOf("\"", maxKey + 11) + 1;
-    int maxEnd = data.indexOf("\"", maxStart);
-    String maxT = data.substring(maxStart, maxEnd);
-    currentPos = maxEnd;
-
-    // Extract Min Temp
-    int minKey = data.indexOf("\"mintempC\":", currentPos);
-    if (minKey == -1) break;
-    int minStart = data.indexOf("\"", minKey + 11) + 1;
-    int minEnd = data.indexOf("\"", minStart);
-    String minT = data.substring(minStart, minEnd);
-    currentPos = minEnd;
 
     // Construct full text
     // Format: "MM-DD: min/max C, Sang: ..., Trua: ..., Chieu: ..., Toi: ..."
