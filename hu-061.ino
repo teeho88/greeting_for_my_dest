@@ -56,6 +56,7 @@ const int ADDR_TZ   = 210;  // 4 bytes (int32) for timezone offset in seconds
 const int ADDR_GREETING = 220;
 const int ADDR_FIRMWARE_URL = 430;
 const int ADDR_SIGNATURE = 600;  // 4-byte signature "CFG1" to indicate valid config
+const int ADDR_ETAG = 610;
 
 // Wi-Fi and server:
 ESP8266WebServer server(80);
@@ -142,7 +143,7 @@ void updateGreeting();
 void drawDynamicBackground();
 void drawSleepConfirmScreen();
 void checkForFirmwareUpdate();
-void startOTAUpdate();
+void startOTAUpdate(String targetETag = "");
 void enterSleep();
 
 void setup() {
@@ -628,6 +629,18 @@ void loadSettings() {
     firmwareUrl = String(buf);
   } else {
     firmwareUrl = "";
+  }
+  // Read ETag
+  len = EEPROM.read(ADDR_ETAG);
+  if (len > 0 && len < 0xFF) {
+    char buf[100];
+    for (int i = 0; i < len && i < 99; ++i) {
+      buf[i] = char(EEPROM.read(ADDR_ETAG + 1 + i));
+    }
+    buf[len] = '\0';
+    currentFirmwareETag = String(buf);
+  } else {
+    currentFirmwareETag = "";
   }
   // Read Timezone offset (int32)
   uint32_t b0 = EEPROM.read(ADDR_TZ);
@@ -1392,7 +1405,7 @@ void checkForFirmwareUpdate() {
            currentFirmwareETag = newETag;
          } else if (currentFirmwareETag != newETag) {
            // ETag changed, trigger update!
-           startOTAUpdate(); 
+           startOTAUpdate(newETag); 
          }
        }
     }
@@ -1400,7 +1413,7 @@ void checkForFirmwareUpdate() {
   }
 }
 
-void startOTAUpdate() {
+void startOTAUpdate(String targetETag) {
   display.clearDisplay();
   display.setFont(NULL);
   display.setCursor(0, 0);
@@ -1452,6 +1465,25 @@ void startOTAUpdate() {
   else url += "&t=" + String(millis());
 
   ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
+  ESPhttpUpdate.rebootOnUpdate(false);
+  
+  ESPhttpUpdate.onProgress([](int cur, int total) {
+    static int lastPercent = -1;
+    int percent = (cur * 100) / total;
+    if (percent != lastPercent) {
+      lastPercent = percent;
+      display.clearDisplay();
+      display.setCursor(0, 0);
+      display.println("Downloading...");
+      // Draw Progress Bar
+      display.drawRect(0, 20, 128, 12, SSD1306_WHITE);
+      display.fillRect(2, 22, map(percent, 0, 100, 0, 124), 8, SSD1306_WHITE);
+      // Draw Text
+      display.setCursor(54, 36);
+      display.print(String(percent) + "%");
+      display.display();
+    }
+  });
   
   // This function will block until update is complete or fails
   t_httpUpdate_return ret = ESPhttpUpdate.update(client, url);
@@ -1484,6 +1516,20 @@ void startOTAUpdate() {
         
         delay(40); // Tốc độ cuộn
       }
+      ESP.restart();
+  } else if (ret == HTTP_UPDATE_OK) {
+      if (targetETag != "") {
+        int len = targetETag.length();
+        if (len > 90) len = 90;
+        EEPROM.write(ADDR_ETAG, len);
+        for (int i = 0; i < len; ++i) {
+          EEPROM.write(ADDR_ETAG + 1 + i, targetETag[i]);
+        }
+        EEPROM.commit();
+      }
+      display.println("Update OK");
+      display.display();
+      delay(1000);
       ESP.restart();
   }
 }
