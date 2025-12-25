@@ -178,13 +178,19 @@ void setup() {
   // Check button press in first 300ms of boot
   bool buttonPressed = false;
   unsigned long startTime = millis();
-  while (millis() - startTime < 300) {
+  unsigned long lowCount = 0;
+  // Tăng thời gian kiểm tra và yêu cầu giữ nút liên tục để tránh nhiễu
+  while (millis() - startTime < 500) {
     if (digitalRead(BUTTON_PIN) == LOW) {
-      buttonPressed = true;
+      lowCount++;
+    } else {
+      lowCount = 0;
     }
     delay(10);
-  }
-  if (buttonPressed) {
+    if (lowCount > 10) { // Giữ liên tục > 100ms (10 * 10ms)
+      buttonPressed = true;
+      break;
+    }
   }
 
   // Determine if we should start config portal
@@ -318,30 +324,33 @@ void loop() {
   } else {
     if (btnPressStart != 0) {
       // Button released
-      if (!btnActionTaken && systemMode == 3) {
-        // Sleep Confirm Mode: Click to toggle selection
-        sleepSelectedYes = !sleepSelectedYes;
-        drawSleepConfirmScreen();
-      } else if (!btnActionTaken && systemMode == 1) {
-        // Config Mode: Click to return to Normal Mode (Reboot)
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.println("Exit Config Mode");
-        display.display();
-        delay(1000);
-        ESP.restart();
-      } else if (!btnActionTaken && systemMode == 0) {
-        // Normal Mode Click: Switch to Lucky Number
-        currentScreen = 4;
-        lastScreenSwitch = millis();
-      } else if (!btnActionTaken && systemMode == 2) {
-        // Update Mode Click: Exit/Reboot
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.println("Exit Update Mode");
-        display.display();
-        delay(1000);
-        ESP.restart();
+      // Debounce: Chỉ nhận click nếu thời gian nhấn > 50ms
+      if (millis() - btnPressStart > 50) {
+        if (!btnActionTaken && systemMode == 3) {
+          // Sleep Confirm Mode: Click to toggle selection
+          sleepSelectedYes = !sleepSelectedYes;
+          drawSleepConfirmScreen();
+        } else if (!btnActionTaken && systemMode == 1) {
+          // Config Mode: Click to return to Normal Mode (Reboot)
+          display.clearDisplay();
+          display.setCursor(0, 0);
+          display.println("Exit Config Mode");
+          display.display();
+          delay(1000);
+          ESP.restart();
+        } else if (!btnActionTaken && systemMode == 0) {
+          // Normal Mode Click: Switch to Lucky Number
+          currentScreen = 4;
+          lastScreenSwitch = millis();
+        } else if (!btnActionTaken && systemMode == 2) {
+          // Update Mode Click: Exit/Reboot
+          display.clearDisplay();
+          display.setCursor(0, 0);
+          display.println("Exit Update Mode");
+          display.display();
+          delay(1000);
+          ESP.restart();
+        }
       }
       btnPressStart = 0;
       btnActionTaken = false;
@@ -1420,6 +1429,13 @@ void startOTAUpdate(String targetETag) {
   display.println("OTA GitHub Mode");
   display.display();
 
+  // Free up memory to ensure stable update
+  for(int i=0; i<3; i++) forecasts[i].fullText = "";
+  currentGreeting = "";
+  weatherCond = "";
+  weatherTemp = "";
+  weatherHum = "";
+
   if (WiFi.status() != WL_CONNECTED) {
     display.println("Connecting WiFi...");
     display.display();
@@ -1458,7 +1474,7 @@ void startOTAUpdate(String targetETag) {
   // Tăng buffer RX lên 4096 để xử lý TLS Handshake của GitHub (tránh lỗi connection lost)
   // TX để 512 là đủ cho request
   client.setBufferSizes(4096, 512);
-  client.setTimeout(10000);
+  client.setTimeout(15000);
   
   // Add cache buster
   String url = firmwareUrl;
@@ -1470,19 +1486,26 @@ void startOTAUpdate(String targetETag) {
   
   int lastPercent = -1;
   int lastBytes = 0;
-  ESPhttpUpdate.onProgress([&lastPercent, &lastBytes](int cur, int total) {
+  bool firstRun = true;
+  ESPhttpUpdate.onProgress([&lastPercent, &lastBytes, &firstRun](int cur, int total) {
     bool shouldDraw = false;
     int percent = 0;
 
+    if (firstRun) {
+      shouldDraw = true;
+      firstRun = false;
+    }
+
     if (total > 0) {
        percent = (cur * 100) / total;
-       if (percent != lastPercent) {
+       // Update every 5% to prevent I2C blocking network
+       if (percent >= lastPercent + 5 || percent < lastPercent) {
          lastPercent = percent;
          shouldDraw = true;
        }
     } else {
-       // Chunked encoding (total=0): Update every ~1KB
-       if (cur - lastBytes >= 1024 || cur < lastBytes) {
+       // Chunked encoding (total=0): Update every ~2KB
+       if (cur - lastBytes >= 2048 || cur < lastBytes) {
          lastBytes = cur;
          shouldDraw = true;
        }
@@ -1505,6 +1528,7 @@ void startOTAUpdate(String targetETag) {
         display.print(String(cur / 1024) + " KB");
       }
       display.display();
+      yield(); // Feed WDT
     }
   });
   
