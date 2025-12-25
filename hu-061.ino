@@ -155,7 +155,6 @@ void setup() {
       display.clearDisplay();
       display.setTextColor(SSD1306_WHITE);
       display.println("Booting...");
-      display.println(firmwareVersion);
       display.display();
       displayReady = true;
     } else {
@@ -213,6 +212,7 @@ void setup() {
       display.clearDisplay();
       display.setFont(NULL);
       display.setCursor(0, 0);
+      display.println(firmwareVersion);
       display.println(F("Connecting to WiFi:"));
       display.println(wifiSSID);
       display.display();
