@@ -211,8 +211,10 @@ void setup() {
     if (displayInitialized) {
       display.clearDisplay();
       display.setFont(NULL);
+      display.setTextColor(SSD1306_WHITE);
+      display.setTextSize(1);
       display.setCursor(0, 0);
-      display.println(F("Version:"));
+      display.print(F("FW Ver: "));
       display.println(firmwareVersion);
       display.println(F("Connecting to WiFi:"));
       display.println(wifiSSID);
@@ -372,7 +374,7 @@ void loop() {
     lastGreetingUpdate = now;
   }
   
-  // Check firmware update every 1 minute
+  // Check firmware update every 10 minute
   if (now - lastOTACheck > 60000UL) {
     checkForFirmwareUpdate();
     lastOTACheck = now;
