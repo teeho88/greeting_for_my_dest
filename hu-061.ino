@@ -126,6 +126,17 @@ struct Heart {
 Heart hearts[NUM_HEARTS];
 bool heartsInitialized = false;
 
+// Weather Task Variables
+enum WeatherTaskState {
+  W_IDLE,
+  W_CONNECTING,
+  W_WAIT_HEADER,
+  W_READ_BODY
+};
+WeatherTaskState weatherTaskState = W_IDLE;
+WiFiClientSecure weatherClient;
+unsigned long weatherTaskTimer = 0;
+
 // Function prototypes:
 void loadSettings();
 void saveSettings();
@@ -137,7 +148,8 @@ void drawForecastScreen();
 void drawGreetingScreen();
 void startUpdatePortal();
 void drawLuckyNumberScreen();
-bool getWeather();
+void handleWeatherTask();
+void parseWeatherData(String result);
 String removeAccents(String str);
 bool getForecast();
 void updateGreeting();
@@ -277,8 +289,7 @@ void setup() {
   lastGreetingUpdate = millis();
   lastOTACheck = millis();
 
-weatherValid = getWeather();
-lastWeatherFetch = millis();
+  weatherTaskState = W_IDLE;
 }
 
 void loop() {
@@ -412,19 +423,16 @@ void loop() {
     }
     lastScreenSwitch = now;
     
-    // Data update logic based on screen
-    if (currentScreen == 1) { // Weather
-      if (millis() - lastWeatherFetch > 900000UL || !weatherValid) {
-        weatherValid = getWeather();
-        lastWeatherFetch = millis();
-      }
-    } else if (currentScreen == 2) { // Forecast
+    if (currentScreen == 2) { // Forecast
       if (millis() - lastForecastFetch > 3600000UL || !forecastValid) { // Every 1 hour
         forecastValid = getForecast();
         lastForecastFetch = millis();
       }
     }
   }
+
+  // Run Weather Task
+  handleWeatherTask();
 
   // Draw the appropriate screen
   switch (currentScreen) {
@@ -1128,44 +1136,80 @@ void drawGreetingScreen() {
   display.display();
 }
 
-bool getWeather() {
-  if (WiFi.status() != WL_CONNECTED) return false;
+void handleWeatherTask() {
+  switch (weatherTaskState) {
+    case W_IDLE:
+      if ((millis() - lastWeatherFetch > 900000UL) || (currentScreen == 1 && !weatherValid)) {
+        weatherTaskState = W_CONNECTING;
+      }
+      break;
 
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(10000);
+    case W_CONNECTING:
+      if (WiFi.status() == WL_CONNECTED) {
+        weatherClient.setInsecure();
+        weatherClient.setBufferSizes(1024, 512);
+        // Note: connect is blocking on ESP8266
+        if (weatherClient.connect("wttr.in", 443)) {
+           String encodedCity = city;
+           encodedCity.replace(" ", "-");
+           weatherClient.print("GET /" + encodedCity + "?format=%t|%C|%h|%w|%P HTTP/1.1\r\n" +
+                               "Host: wttr.in\r\n" +
+                               "User-Agent: ESP8266-Weather-Clock\r\n" +
+                               "Connection: close\r\n\r\n");
+           weatherTaskState = W_WAIT_HEADER;
+           weatherTaskTimer = millis();
+        } else {
+           weatherTaskState = W_IDLE;
+           lastWeatherFetch = millis() - 840000UL; // Retry in 1 min
+        }
+      }
+      break;
 
-  HTTPClient http;
-  String encodedCity = city;
-  encodedCity.replace(" ", "%20");
-  String url = "https://wttr.in/" + encodedCity + "?format=%t|%C|%h|%w|%P";
+    case W_WAIT_HEADER:
+      if (weatherClient.available()) {
+        while (weatherClient.available()) {
+          String line = weatherClient.readStringUntil('\n');
+          line.trim();
+          if (line == "") {
+            weatherTaskState = W_READ_BODY;
+            weatherTaskTimer = millis();
+            break;
+          }
+        }
+      }
+      if (millis() - weatherTaskTimer > 10000) { // Timeout
+        weatherClient.stop();
+        weatherTaskState = W_IDLE;
+      }
+      break;
 
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  http.setUserAgent("ESP8266-Weather-Clock");
-
-  if (!http.begin(client, url)) return false;
-
-  int httpCode = http.GET();
-  if (httpCode != HTTP_CODE_OK) {
-    http.end();
-    return false;
+    case W_READ_BODY:
+      if (weatherClient.available()) {
+        String result = weatherClient.readStringUntil('\n');
+        parseWeatherData(result);
+        weatherClient.stop();
+        weatherValid = true;
+        lastWeatherFetch = millis();
+        weatherTaskState = W_IDLE;
+      }
+      if (millis() - weatherTaskTimer > 5000) {
+        weatherClient.stop();
+        weatherTaskState = W_IDLE;
+      }
+      break;
   }
+}
 
-  String result = http.getString();
-  http.end();
-  
+void parseWeatherData(String result) {
   result.trim();
-
-  if (result.length() == 0) {
-    return false;
-  }
+  if (result.length() == 0) return;
 
   // Parse fields: temp|cond|hum|wind|press
   int idx1 = result.indexOf('|');
   int idx2 = result.indexOf('|', idx1 + 1);
   int idx3 = result.indexOf('|', idx2 + 1);
   int idx4 = result.indexOf('|', idx3 + 1);
-  if (idx1 < 0 || idx2 < 0 || idx3 < 0 || idx4 < 0) return false;
+  if (idx1 < 0 || idx2 < 0 || idx3 < 0 || idx4 < 0) return;
 
   String tempStr   = result.substring(0, idx1);
   String condStr   = result.substring(idx1 + 1, idx2);
@@ -1229,12 +1273,6 @@ bool getWeather() {
     int pressRounded = (int) round(pressMm);
     weatherPress = String(pressRounded);
   }
-
-  // Validate critical fields
-  if (weatherTemp == "" || weatherCond == "") {
-    return false;
-  }
-  return true;
 }
 
 String removeAccents(String str) {
@@ -1264,7 +1302,7 @@ bool getForecast() {
   
   HTTPClient http;
   String encodedCity = city;
-  encodedCity.replace(" ", "%20");
+  encodedCity.replace(" ", "-");
   String url = "https://wttr.in/" + encodedCity + "?format=j1&lang=en";
 
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
