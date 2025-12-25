@@ -61,7 +61,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.1";
+const String firmwareVersion = "v1.1.2";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -116,7 +116,7 @@ unsigned long lastOTACheck = 0;
 String currentFirmwareETag = "";
 
 // Snow effect data
-const int NUM_HEARTS = 20;
+const int NUM_HEARTS = 10;
 struct Heart {
   float x;
   float y;
@@ -1129,33 +1129,30 @@ void drawGreetingScreen() {
 }
 
 bool getWeather() {
-  if (WiFi.status() != WL_CONNECTED) {
-    return false;
-  }
+  if (WiFi.status() != WL_CONNECTED) return false;
 
-  WiFiClient client;
-  client.setTimeout(5000);
-  const char* host = "wttr.in";
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(10000);
+
+  HTTPClient http;
   String encodedCity = city;
-  encodedCity.replace(" ", "-");
-  String url = "/" + encodedCity + "?format=%t|%C|%h|%w|%P";
+  encodedCity.replace(" ", "%20");
+  String url = "https://wttr.in/" + encodedCity + "?format=%t|%C|%h|%w|%P";
 
-  if (!client.connect(host, 80)) {
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setUserAgent("ESP8266-Weather-Clock");
+
+  if (!http.begin(client, url)) return false;
+
+  int httpCode = http.GET();
+  if (httpCode != HTTP_CODE_OK) {
+    http.end();
     return false;
   }
 
-  // Send GET request
-  client.print(String(F("GET ")) + url + F(" HTTP/1.1\r\n") +
-               F("Host: ") + host + F("\r\n") +
-               F("User-Agent: ESP8266\r\n") +
-               F("Connection: close\r\n\r\n"));
-
-  // Skip headers
-  if (!client.find("\r\n\r\n")) return false;
-
-  // Read body
-  String result = client.readStringUntil('\n');
-  client.stop();
+  String result = http.getString();
+  http.end();
   
   result.trim();
 
@@ -1260,58 +1257,58 @@ String removeAccents(String str) {
 
 bool getForecast() {
   if (WiFi.status() != WL_CONNECTED) return false;
-  WiFiClient client;
-  client.setTimeout(5000);
-  const char* host = "wttr.in";
+  
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(10000);
+  
+  HTTPClient http;
   String encodedCity = city;
-  encodedCity.replace(" ", "-");
-  // Use JSON format
-  String url = "/" + encodedCity + "?format=j1&lang=en";
+  encodedCity.replace(" ", "%20");
+  String url = "https://wttr.in/" + encodedCity + "?format=j1&lang=en";
 
-  if (!client.connect(host, 80)) return false;
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setUserAgent("ESP8266-Weather-Clock");
 
-  client.print(String(F("GET ")) + url + F(" HTTP/1.1\r\n") +
-               F("Host: ") + host + F("\r\n") +
-               F("User-Agent: ESP8266\r\n") +
-               F("Connection: close\r\n\r\n"));
+  if (!http.begin(client, url)) return false;
 
-  // Skip headers
-  while (client.connected()) {
-    String line = client.readStringUntil('\n');
-    if (line == "\r") break;
-    if (line == "\r" || line == "") break;
+  int httpCode = http.GET();
+  if (httpCode != HTTP_CODE_OK) {
+    http.end();
+    return false;
   }
 
-  // Stream parsing to save memory and handle large responses
-  if (!client.find("\"weather\":")) {
-    client.stop();
+  WiFiClient * stream = http.getStreamPtr();
+
+  if (!stream->find("\"weather\":")) {
+    http.end();
     return false;
   }
 
   for (int i = 0; i < 3; i++) {
     // Extract Date
-    if (!client.find("\"date\":")) break;
-    if (!client.find("\"")) break;
-    String date = client.readStringUntil('\"');
+    if (!stream->find("\"date\":")) break;
+    if (!stream->find("\"")) break;
+    String date = stream->readStringUntil('\"');
 
     // Extract Hourly descriptions
     String morn = "", noon = "", aft = "", eve = "";
-    if (client.find("\"hourly\":")) {
+    if (stream->find("\"hourly\":")) {
       for (int h = 0; h < 8; h++) {
         // Find time
         String timeVal = "";
-        if (client.find("\"time\":")) {
-          if (client.find("\"")) {
-            timeVal = client.readStringUntil('\"');
+        if (stream->find("\"time\":")) {
+          if (stream->find("\"")) {
+            timeVal = stream->readStringUntil('\"');
           }
         }
         
         String desc = "";
         // Look for weatherDesc
-        if (client.find("\"weatherDesc\":")) {
-          if (client.find("\"value\":")) {
-            if (client.find("\"")) {
-              desc = client.readStringUntil('\"');
+        if (stream->find("\"weatherDesc\":")) {
+          if (stream->find("\"value\":")) {
+            if (stream->find("\"")) {
+              desc = stream->readStringUntil('\"');
             }
           }
         }
@@ -1324,14 +1321,14 @@ bool getForecast() {
     }
 
     // Extract Max Temp
-    if (!client.find("\"maxtempC\":")) break;
-    if (!client.find("\"")) break;
-    String maxT = client.readStringUntil('\"');
+    if (!stream->find("\"maxtempC\":")) break;
+    if (!stream->find("\"")) break;
+    String maxT = stream->readStringUntil('\"');
 
     // Extract Min Temp
-    if (!client.find("\"mintempC\":")) break;
-    if (!client.find("\"")) break;
-    String minT = client.readStringUntil('\"');
+    if (!stream->find("\"mintempC\":")) break;
+    if (!stream->find("\"")) break;
+    String minT = stream->readStringUntil('\"');
 
     // Construct full text
     // Format: "MM-DD: min/max C, Sang: ..., Trua: ..., Chieu: ..., Toi: ..."
@@ -1344,7 +1341,7 @@ bool getForecast() {
     
     forecasts[i].fullText = text;
   }
-  client.stop();
+  http.end();
   return true;
 }
 
