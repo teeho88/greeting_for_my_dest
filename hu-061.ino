@@ -116,14 +116,14 @@ unsigned long lastOTACheck = 0;
 String currentFirmwareETag = "";
 
 // Snow effect data
-const int NUM_SNOWFLAKES = 40;
-struct Snowflake {
+const int NUM_HEARTS = 40;
+struct Heart {
   float x;
   float y;
   float speed;
 };
-Snowflake snowflakes[NUM_SNOWFLAKES];
-bool snowInitialized = false;
+Heart hearts[NUM_HEARTS];
+bool heartsInitialized = false;
 
 // Function prototypes:
 void loadSettings();
@@ -759,23 +759,33 @@ void drawSleepConfirmScreen() {
 }
 
 void drawDynamicBackground() {
-  // Draw Snow Background
-  if (!snowInitialized) {
-    for (int i = 0; i < NUM_SNOWFLAKES; i++) {
-      snowflakes[i].x = random(0, 128);
-      snowflakes[i].y = random(0, 64);
-      snowflakes[i].speed = random(5, 25) / 10.0;
+  // Draw Heart Bubbles Background
+  if (!heartsInitialized) {
+    for (int i = 0; i < NUM_HEARTS; i++) {
+      hearts[i].x = random(0, 128);
+      hearts[i].y = random(0, 64);
+      hearts[i].speed = random(2, 15) / 10.0;
     }
-    snowInitialized = true;
+    heartsInitialized = true;
   }
 
-  for (int i = 0; i < NUM_SNOWFLAKES; i++) {
-    display.drawPixel((int)snowflakes[i].x, (int)snowflakes[i].y, SSD1306_WHITE);
-    snowflakes[i].y += snowflakes[i].speed;
-    if (snowflakes[i].y >= 64) {
-      snowflakes[i].y = 0;
-      snowflakes[i].x = random(0, 128);
-      snowflakes[i].speed = random(5, 25) / 10.0;
+  for (int i = 0; i < NUM_HEARTS; i++) {
+    int x = (int)hearts[i].x;
+    int y = (int)hearts[i].y;
+
+    // Draw Heart Shape (3x3)
+    display.drawPixel(x, y, SSD1306_WHITE);
+    display.drawPixel(x + 2, y, SSD1306_WHITE);
+    display.drawPixel(x, y + 1, SSD1306_WHITE);
+    display.drawPixel(x + 1, y + 1, SSD1306_WHITE);
+    display.drawPixel(x + 2, y + 1, SSD1306_WHITE);
+    display.drawPixel(x + 1, y + 2, SSD1306_WHITE);
+
+    hearts[i].y -= hearts[i].speed;
+    if (hearts[i].y < -3) {
+      hearts[i].y = 64;
+      hearts[i].x = random(0, 128);
+      hearts[i].speed = random(2, 15) / 10.0;
     }
   }
 }
