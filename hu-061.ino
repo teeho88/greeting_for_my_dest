@@ -1467,8 +1467,9 @@ void startOTAUpdate(String targetETag) {
   ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
   ESPhttpUpdate.rebootOnUpdate(false);
   
-  ESPhttpUpdate.onProgress([](int cur, int total) {
-    static int lastPercent = -1;
+  int lastPercent = -1;
+  ESPhttpUpdate.onProgress([&lastPercent](int cur, int total) {
+    if (total <= 0) return;
     int percent = (cur * 100) / total;
     if (percent != lastPercent) {
       lastPercent = percent;
