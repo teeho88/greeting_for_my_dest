@@ -212,6 +212,7 @@ void setup() {
       display.clearDisplay();
       display.setFont(NULL);
       display.setCursor(0, 0);
+      display.println(F("Version:"));
       display.println(firmwareVersion);
       display.println(F("Connecting to WiFi:"));
       display.println(wifiSSID);
