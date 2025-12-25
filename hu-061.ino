@@ -1429,6 +1429,10 @@ void startOTAUpdate(String targetETag) {
   display.println("OTA GitHub Mode");
   display.display();
 
+  // Debug: Print initial Heap
+  display.print("Heap: "); display.println(ESP.getFreeHeap());
+  display.display();
+
   // Free up memory to ensure stable update
   for(int i=0; i<3; i++) forecasts[i].fullText = "";
   currentGreeting = "";
@@ -1459,6 +1463,7 @@ void startOTAUpdate(String targetETag) {
   }
   
   display.println("\nDownloading...");
+  display.print("URL: "); display.println(firmwareUrl.substring(0, 10) + "...");
   display.display();
   
   if (firmwareUrl == "") {
@@ -1484,52 +1489,30 @@ void startOTAUpdate(String targetETag) {
   ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
   ESPhttpUpdate.rebootOnUpdate(false);
   
-  int lastPercent = -1;
-  int lastBytes = 0;
-  bool firstRun = true;
-  ESPhttpUpdate.onProgress([&lastPercent, &lastBytes, &firstRun](int cur, int total) {
-    bool shouldDraw = false;
-    int percent = 0;
-
-    if (firstRun) {
-      shouldDraw = true;
-      firstRun = false;
-    }
-
-    if (total > 0) {
-       percent = (cur * 100) / total;
-       // Update every 5% to prevent I2C blocking network
-       if (percent >= lastPercent + 5 || percent < lastPercent) {
-         lastPercent = percent;
-         shouldDraw = true;
-       }
-    } else {
-       // Chunked encoding (total=0): Update every ~2KB
-       if (cur - lastBytes >= 2048 || cur < lastBytes) {
-         lastBytes = cur;
-         shouldDraw = true;
-       }
-    }
-
-    if (shouldDraw) {
+  // Debug Callback: Show raw bytes and heap
+  ESPhttpUpdate.onProgress([](int cur, int total) {
+    static unsigned long lastDraw = 0;
+    // Throttle display updates to avoid I2C hanging the network (max 5fps)
+    if (millis() - lastDraw > 200) {
+      lastDraw = millis();
       display.clearDisplay();
       display.setCursor(0, 0);
-      display.println("Downloading...");
+      display.println("OTA Debug:");
+      
+      display.print("C: "); display.println(cur);
+      display.print("T: "); display.println(total);
       
       if (total > 0) {
-        // Draw Progress Bar
-        display.drawRect(0, 20, 128, 12, SSD1306_WHITE);
-        display.fillRect(2, 22, map(percent, 0, 100, 0, 124), 8, SSD1306_WHITE);
-        display.setCursor(54, 36);
-        display.print(String(percent) + "%");
+        int pct = (cur * 100) / total;
+        display.print("Pct: "); display.print(pct); display.println("%");
       } else {
-        // Show bytes downloaded for Chunked encoding
-        display.setCursor(0, 25);
-        display.print(String(cur / 1024) + " KB");
+        display.println("Mode: Chunked");
       }
+      
+      display.print("Heap: "); display.println(ESP.getFreeHeap());
       display.display();
-      yield(); // Feed WDT
     }
+    yield(); // Feed WDT
   });
   
   // This function will block until update is complete or fails
