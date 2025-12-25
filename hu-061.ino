@@ -1082,15 +1082,14 @@ bool getWeather() {
     return false;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure(); // Skip certificate validation for simplicity
-  client.setTimeout(10000); // Increase timeout to 10s
+  WiFiClient client;
+  client.setTimeout(5000);
   const char* host = "wttr.in";
   String encodedCity = city;
   encodedCity.replace(" ", "-");
   String url = "/" + encodedCity + "?format=%t|%C|%h|%w|%P";
 
-  if (!client.connect(host, 443)) {
+  if (!client.connect(host, 80)) {
     return false;
   }
 
@@ -1210,16 +1209,15 @@ String removeAccents(String str) {
 
 bool getForecast() {
   if (WiFi.status() != WL_CONNECTED) return false;
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(10000); // Increase timeout to 10s
+  WiFiClient client;
+  client.setTimeout(5000);
   const char* host = "wttr.in";
   String encodedCity = city;
   encodedCity.replace(" ", "-");
   // Use JSON format
   String url = "/" + encodedCity + "?format=j1&lang=en";
 
-  if (!client.connect(host, 443)) return false;
+  if (!client.connect(host, 80)) return false;
 
   client.print(String(F("GET ")) + url + F(" HTTP/1.1\r\n") +
                F("Host: ") + host + F("\r\n") +
