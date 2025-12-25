@@ -107,7 +107,7 @@ int greetingIndex = 0;
 int luckyNumber = 0;
 int lastLuckyDay = -1;
 
-// System Modes: 0=Normal, 1=Config, 2=Update, 3=SleepConfirm
+// System Modes: 0=Normal, 1=Config, 2=Update, 3=SleepConfirm, 4=OTA_GitHub
 int systemMode = 0;
 bool apServerRunning = false;
 bool sleepSelectedYes = false; // false = Không, true = Có
@@ -309,6 +309,11 @@ void loop() {
         systemMode = 2;
         startUpdatePortal();
         btnActionTaken = true;
+      } else if (systemMode == 2) {
+        // Update Manual -> OTA GitHub
+        systemMode = 4;
+        startOTAUpdate();
+        btnActionTaken = true;
       }
     }
   } else {
@@ -355,6 +360,10 @@ void loop() {
     return; // Wait for user interaction in Sleep Confirm mode
   }
 
+  if (systemMode == 4) {
+    return;
+  }
+
   // Regular mode: update time and handle display
   timeClient.update();
   unsigned long now = millis();
@@ -375,7 +384,7 @@ void loop() {
   }
   
   // Check firmware update every 10 minute
-  if (now - lastOTACheck > 60000UL) {
+  if (now - lastOTACheck > 600000UL) {
     checkForFirmwareUpdate();
     lastOTACheck = now;
   }
@@ -1397,9 +1406,41 @@ void startOTAUpdate() {
   display.clearDisplay();
   display.setFont(NULL);
   display.setCursor(0, 0);
-  display.println("Updating Firmware...");
-  display.println("Please wait");
+  display.println("OTA GitHub Mode");
   display.display();
+
+  if (WiFi.status() != WL_CONNECTED) {
+    display.println("Connecting WiFi...");
+    display.display();
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(wifiSSID.c_str(), wifiPass.c_str());
+    
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+      delay(500);
+      display.print(".");
+      display.display();
+    }
+    
+    if (WiFi.status() != WL_CONNECTED) {
+      display.println("\nWiFi Failed!");
+      display.display();
+      delay(2000);
+      ESP.restart();
+      return;
+    }
+  }
+  
+  display.println("\nDownloading...");
+  display.display();
+  
+  if (firmwareUrl == "") {
+     display.println("No URL set!");
+     display.display();
+     delay(2000);
+     ESP.restart();
+     return;
+  }
 
   WiFiClientSecure client;
   client.setInsecure();
@@ -1416,7 +1457,12 @@ void startOTAUpdate() {
   t_httpUpdate_return ret = ESPhttpUpdate.update(client, url);
   
   if (ret == HTTP_UPDATE_FAILED) {
-      // Only reboot if failed, success reboots automatically
+      display.clearDisplay();
+      display.setCursor(0,0);
+      display.println("Update Failed");
+      display.println(ESPhttpUpdate.getLastErrorString());
+      display.display();
+      delay(5000);
       ESP.restart();
   }
 }
