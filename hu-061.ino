@@ -136,6 +136,7 @@ enum WeatherTaskState {
 WeatherTaskState weatherTaskState = W_IDLE;
 WiFiClientSecure weatherClient;
 unsigned long weatherTaskTimer = 0;
+String weatherResponseBuffer = "";
 
 // Forecast Task Variables
 enum ForecastTaskState {
@@ -147,6 +148,7 @@ enum ForecastTaskState {
 ForecastTaskState forecastTaskState = F_IDLE;
 WiFiClientSecure forecastClient;
 unsigned long forecastTaskTimer = 0;
+String forecastResponseBuffer = "";
 
 // Function prototypes:
 void loadSettings();
@@ -163,7 +165,7 @@ void handleWeatherTask();
 void parseWeatherData(String result);
 String removeAccents(String str);
 void handleForecastTask();
-void parseForecastStream(WiFiClient& stream);
+void parseForecastData(String data);
 void updateGreeting();
 void drawDynamicBackground();
 void drawSleepConfirmScreen();
@@ -1167,12 +1169,13 @@ void handleWeatherTask() {
         if (weatherClient.connect("wttr.in", 443)) {
            String encodedCity = city;
            encodedCity.replace(" ", "-");
-           weatherClient.print("GET /" + encodedCity + "?format=%t|%C|%h|%w|%P HTTP/1.1\r\n" +
+           weatherClient.print("GET /" + encodedCity + "?format=%t|%C|%h|%w|%P HTTP/1.0\r\n" +
                                "Host: wttr.in\r\n" +
                                "User-Agent: ESP8266-Weather-Clock\r\n" +
                                "Connection: close\r\n\r\n");
            weatherTaskState = W_WAIT_HEADER;
            weatherTaskTimer = millis();
+           weatherResponseBuffer = "";
         } else {
            weatherTaskState = W_IDLE;
            lastWeatherFetch = millis() - 840000UL; // Retry in 1 min
@@ -1181,16 +1184,10 @@ void handleWeatherTask() {
       break;
 
     case W_WAIT_HEADER:
+      // Wait for data to arrive
       if (weatherClient.available()) {
-        while (weatherClient.available()) {
-          String line = weatherClient.readStringUntil('\n');
-          line.trim();
-          if (line == "") {
-            weatherTaskState = W_READ_BODY;
-            weatherTaskTimer = millis();
-            break;
-          }
-        }
+        weatherTaskState = W_READ_BODY;
+        weatherTaskTimer = millis();
       }
       if (millis() - weatherTaskTimer > 10000) { // Timeout
         weatherClient.stop();
@@ -1199,15 +1196,21 @@ void handleWeatherTask() {
       break;
 
     case W_READ_BODY:
-      if (weatherClient.available()) {
-        String result = weatherClient.readStringUntil('\n');
-        parseWeatherData(result);
+      unsigned long startLoop = millis();
+      while (weatherClient.available()) {
+        char c = (char)weatherClient.read();
+        weatherResponseBuffer += c;
+        if (millis() - startLoop > 5) break; // Limit blocking time per loop
+      }
+
+      if (!weatherClient.connected() && !weatherClient.available()) {
+        parseWeatherData(weatherResponseBuffer);
         weatherClient.stop();
         weatherValid = true;
         lastWeatherFetch = millis();
         weatherTaskState = W_IDLE;
       }
-      if (millis() - weatherTaskTimer > 5000) {
+      if (millis() - weatherTaskTimer > 10000) {
         weatherClient.stop();
         weatherTaskState = W_IDLE;
       }
@@ -1216,6 +1219,11 @@ void handleWeatherTask() {
 }
 
 void parseWeatherData(String result) {
+  // Strip headers (find double newline)
+  int bodyPos = result.indexOf("\r\n\r\n");
+  if (bodyPos != -1) {
+    result = result.substring(bodyPos + 4);
+  }
   result.trim();
   if (result.length() == 0) return;
 
@@ -1321,12 +1329,13 @@ void handleForecastTask() {
         if (forecastClient.connect("wttr.in", 443)) {
            String encodedCity = city;
            encodedCity.replace(" ", "%20");
-           forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.1\r\n" +
+           forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.0\r\n" +
                                 "Host: wttr.in\r\n" +
                                 "User-Agent: ESP8266-Weather-Clock\r\n" +
                                 "Connection: close\r\n\r\n");
            forecastTaskState = F_WAIT_HEADER;
            forecastTaskTimer = millis();
+           forecastResponseBuffer = "";
         } else {
            forecastTaskState = F_IDLE;
            lastForecastFetch = millis() - 3540000UL; // Retry in 1 min
@@ -1336,15 +1345,8 @@ void handleForecastTask() {
 
     case F_WAIT_HEADER:
       if (forecastClient.available()) {
-        while (forecastClient.available()) {
-          String line = forecastClient.readStringUntil('\n');
-          line.trim();
-          if (line == "") {
-            forecastTaskState = F_READ_BODY;
-            forecastTaskTimer = millis();
-            break;
-          }
-        }
+        forecastTaskState = F_READ_BODY;
+        forecastTaskTimer = millis();
       }
       if (millis() - forecastTaskTimer > 10000) { // Timeout
         forecastClient.stop();
@@ -1353,10 +1355,15 @@ void handleForecastTask() {
       break;
 
     case F_READ_BODY:
-      // Khi đã có body, ta parse trực tiếp (phần này vẫn cần chạy liền mạch để đảm bảo tính toàn vẹn của stream)
-      // Tuy nhiên do kết nối đã thiết lập xong, việc đọc sẽ nhanh hơn nhiều.
-      if (forecastClient.available()) {
-        parseForecastStream(forecastClient);
+      unsigned long startLoop = millis();
+      while (forecastClient.available()) {
+        char c = (char)forecastClient.read();
+        forecastResponseBuffer += c;
+        if (millis() - startLoop > 5) break; // Limit blocking time
+      }
+
+      if (!forecastClient.connected() && !forecastClient.available()) {
+        parseForecastData(forecastResponseBuffer);
         forecastClient.stop();
         forecastValid = true;
         lastForecastFetch = millis();
@@ -1370,35 +1377,55 @@ void handleForecastTask() {
   }
 }
 
-void parseForecastStream(WiFiClient& stream) {
-  if (!stream.find("\"weather\":")) return;
+void parseForecastData(String data) {
+  // Strip headers
+  int bodyPos = data.indexOf("\r\n\r\n");
+  if (bodyPos != -1) {
+    data = data.substring(bodyPos + 4);
+  }
+
+  int weatherIdx = data.indexOf("\"weather\":");
+  if (weatherIdx == -1) return;
+  
+  // Simple string parsing
+  int currentPos = weatherIdx;
   
   for (int i = 0; i < 3; i++) {
     // Extract Date
-    if (!stream.find("\"date\":")) break;
-    if (!stream.find("\"")) break;
-    String date = stream.readStringUntil('\"');
+    int dateKey = data.indexOf("\"date\":", currentPos);
+    if (dateKey == -1) break;
+    int dateStart = data.indexOf("\"", dateKey + 7) + 1;
+    int dateEnd = data.indexOf("\"", dateStart);
+    String date = data.substring(dateStart, dateEnd);
+    currentPos = dateEnd;
 
     // Extract Hourly descriptions
     String morn = "", noon = "", aft = "", eve = "";
-    if (stream.find("\"hourly\":")) {
+    int hourlyKey = data.indexOf("\"hourly\":", currentPos);
+    if (hourlyKey != -1) {
+      currentPos = hourlyKey;
       for (int h = 0; h < 8; h++) {
         // Find time
         String timeVal = "";
-        if (stream.find("\"time\":")) {
-          if (stream.find("\"")) {
-            timeVal = stream.readStringUntil('\"');
-          }
+        int timeKey = data.indexOf("\"time\":", currentPos);
+        if (timeKey != -1) {
+           int tStart = data.indexOf("\"", timeKey + 7) + 1;
+           int tEnd = data.indexOf("\"", tStart);
+           timeVal = data.substring(tStart, tEnd);
+           currentPos = tEnd;
         }
         
         String desc = "";
         // Look for weatherDesc
-        if (stream.find("\"weatherDesc\":")) {
-          if (stream.find("\"value\":")) {
-            if (stream.find("\"")) {
-              desc = stream.readStringUntil('\"');
-            }
-          }
+        int wdKey = data.indexOf("\"weatherDesc\":", currentPos);
+        if (wdKey != -1) {
+           int valKey = data.indexOf("\"value\":", wdKey);
+           if (valKey != -1) {
+             int vStart = data.indexOf("\"", valKey + 8) + 1;
+             int vEnd = data.indexOf("\"", vStart);
+             desc = data.substring(vStart, vEnd);
+             currentPos = vEnd;
+           }
         }
         
         if (timeVal == "900") morn = desc;
@@ -1409,14 +1436,20 @@ void parseForecastStream(WiFiClient& stream) {
     }
 
     // Extract Max Temp
-    if (!stream.find("\"maxtempC\":")) break;
-    if (!stream.find("\"")) break;
-    String maxT = stream.readStringUntil('\"');
+    int maxKey = data.indexOf("\"maxtempC\":", currentPos);
+    if (maxKey == -1) break;
+    int maxStart = data.indexOf("\"", maxKey + 11) + 1;
+    int maxEnd = data.indexOf("\"", maxStart);
+    String maxT = data.substring(maxStart, maxEnd);
+    currentPos = maxEnd;
 
     // Extract Min Temp
-    if (!stream.find("\"mintempC\":")) break;
-    if (!stream.find("\"")) break;
-    String minT = stream.readStringUntil('\"');
+    int minKey = data.indexOf("\"mintempC\":", currentPos);
+    if (minKey == -1) break;
+    int minStart = data.indexOf("\"", minKey + 11) + 1;
+    int minEnd = data.indexOf("\"", minStart);
+    String minT = data.substring(minStart, minEnd);
+    currentPos = minEnd;
 
     // Construct full text
     // Format: "MM-DD: min/max C, Sang: ..., Trua: ..., Chieu: ..., Toi: ..."
