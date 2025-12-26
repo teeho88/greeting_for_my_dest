@@ -61,7 +61,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.3";
+const String firmwareVersion = "v1.1.4";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -146,7 +146,7 @@ enum ForecastTaskState {
   F_READ_BODY
 };
 ForecastTaskState forecastTaskState = F_IDLE;
-WiFiClientSecure forecastClient;
+WiFiClient forecastClient;
 unsigned long forecastTaskTimer = 0;
 String forecastResponseBuffer = "";
 
@@ -1323,12 +1323,9 @@ void handleForecastTask() {
 
     case F_CONNECTING:
       if (WiFi.status() == WL_CONNECTED) {
-        forecastClient.setInsecure();
-        // Buffer chuẩn cho SSL (16KB) để tránh lỗi giải mã
-        forecastClient.setBufferSizes(16384, 512);
         forecastResponseBuffer = "";
         forecastResponseBuffer.reserve(6000);
-        if (forecastClient.connect("wttr.in", 443)) {
+        if (forecastClient.connect("wttr.in", 80)) {
            String encodedCity = city;
            encodedCity.replace(" ", "-"); //Use hyphens for spaces
            forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.0\r\n" +
