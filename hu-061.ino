@@ -440,7 +440,7 @@ void loop() {
     
     if (currentScreen == 2) { // Forecast
       if (millis() - lastForecastFetch > 3600000UL || !forecastValid) { // Every 1 hour
-        if (forecastTaskState == F_IDLE) {
+        if (forecastTaskState == F_IDLE && weatherTaskState == W_IDLE) {
           forecastTaskState = F_CONNECTING;
         }
       }
@@ -1156,7 +1156,7 @@ void drawGreetingScreen() {
 void handleWeatherTask() {
   switch (weatherTaskState) {
     case W_IDLE:
-      if ((millis() - lastWeatherFetch > 900000UL) || (currentScreen == 1 && !weatherValid)) {
+      if (((millis() - lastWeatherFetch > 900000UL) || (currentScreen == 1 && !weatherValid)) && forecastTaskState == F_IDLE) {
         weatherTaskState = W_CONNECTING;
       }
       break;
@@ -1168,7 +1168,7 @@ void handleWeatherTask() {
         // Note: connect is blocking on ESP8266
         if (weatherClient.connect("wttr.in", 443)) {
            String encodedCity = city;
-           encodedCity.replace(" ", "-");
+           encodedCity.replace(" ", "-"); //Use hyphens for spaces
            weatherClient.print("GET /" + encodedCity + "?format=%t|%C|%h|%w|%P HTTP/1.0\r\n" +
                                "Host: wttr.in\r\n" +
                                "User-Agent: ESP8266-Weather-Clock\r\n" +
@@ -1324,13 +1324,13 @@ void handleForecastTask() {
     case F_CONNECTING:
       if (WiFi.status() == WL_CONNECTED) {
         forecastClient.setInsecure();
-        // Buffer lớn hơn cho JSON
-        forecastClient.setBufferSizes(2048, 512);
+        // Buffer chuẩn cho SSL (16KB) để tránh lỗi giải mã
+        forecastClient.setBufferSizes(16384, 512);
         forecastResponseBuffer = "";
-        forecastResponseBuffer.reserve(8192);
+        forecastResponseBuffer.reserve(6000);
         if (forecastClient.connect("wttr.in", 443)) {
            String encodedCity = city;
-           encodedCity.replace(" ", "%20");
+           encodedCity.replace(" ", "-"); //Use hyphens for spaces
            forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.0\r\n" +
                                 "Host: wttr.in\r\n" +
                                 "User-Agent: ESP8266-Weather-Clock\r\n" +
