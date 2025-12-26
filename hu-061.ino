@@ -1326,10 +1326,10 @@ void handleForecastTask() {
     case F_CONNECTING:
       if (WiFi.status() == WL_CONNECTED) {
         forecastClient.setInsecure();
-        // Tối ưu buffer 5KB: Đủ chứa JSON dự báo (thường ~3-4KB) mà không gây tràn RAM
-        forecastClient.setBufferSizes(5120, 512);
+        // Tăng buffer lên 6KB để đảm bảo nhận đủ JSON mà vẫn an toàn cho RAM
+        forecastClient.setBufferSizes(6144, 512);
         forecastResponseBuffer = "";
-        forecastResponseBuffer.reserve(6000);
+        forecastResponseBuffer.reserve(6500);
         if (forecastClient.connect("wttr.in", 443)) {
            lastForecastError = "Connected";
            // Chuẩn hóa tên thành phố: Bỏ dấu tiếng Việt và dùng %20 cho khoảng trắng

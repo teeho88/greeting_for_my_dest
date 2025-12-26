@@ -4,3 +4,5 @@ build.bat
 # Binary and build artifacts
 *.elf
 *.map
+
+.vscode/
