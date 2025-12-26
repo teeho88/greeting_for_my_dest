@@ -62,7 +62,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.12";
+const String firmwareVersion = "v1.1.13";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -1626,6 +1626,10 @@ void startOTAUpdate(String targetETag) {
   weatherTemp = "";
   weatherHum = "";
 
+  // Đảm bảo các client khác đã dừng để giải phóng bộ nhớ đệm SSL
+  weatherClient.stop();
+  forecastClient.stop();
+
   if (WiFi.status() != WL_CONNECTED) {
     display.println(F("Connecting WiFi..."));
     display.display();
@@ -1662,9 +1666,8 @@ void startOTAUpdate(String targetETag) {
 
   WiFiClientSecure client;
   client.setInsecure();
-  // Tăng buffer RX lên 16KB (16384) vì Heap đang dư dả (42KB), giúp GitHub ổn định hơn
-  // TX để 512 là đủ cho request
-  client.setBufferSizes(16384, 512);
+  // Giảm buffer xuống 12KB để tránh lỗi thiếu RAM (OOM), vẫn đủ ổn định cho GitHub
+  client.setBufferSizes(12288, 512);
   client.setTimeout(20000);
   
   HTTPClient http;
