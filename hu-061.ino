@@ -1331,7 +1331,7 @@ void handleForecastTask() {
       {
           if (WiFi.status() != WL_CONNECTED) {
               lastForecastError = "No WiFi";
-              lastForecastFetch = millis() - 3600000UL + 60000UL;
+              lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
               forecastTaskState = F_IDLE;
               return;
           }
@@ -1342,7 +1342,7 @@ void handleForecastTask() {
 
           if (!forecastClient.connect("wttr.in", 443)) {
               lastForecastError = "Connect Fail";
-              lastForecastFetch = millis() - 3600000UL + 60000UL;
+              lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
               forecastTaskState = F_IDLE;
               return;
           }
@@ -1362,7 +1362,7 @@ void handleForecastTask() {
           if (!forecastClient.find("\r\n\r\n")) {
               lastForecastError = "Header Fail";
               forecastClient.stop();
-              lastForecastFetch = millis() - 3600000UL + 60000UL;
+              lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
               forecastTaskState = F_IDLE;
               return;
           }
@@ -1397,7 +1397,7 @@ void parseForecastData(WiFiClientSecure& stream) {
   DynamicJsonDocument* doc = new DynamicJsonDocument(5120);
   if (!doc) {
     lastForecastError = "Heap Fail: JD"; // Failed to allocate JsonDocument
-    lastForecastFetch = millis() - 3600000UL + 60000UL;
+    lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
     return;
   }
   
@@ -1407,7 +1407,7 @@ void parseForecastData(WiFiClientSecure& stream) {
   if (error) {
     lastForecastError = "JSON Err: ";
     lastForecastError += error.c_str();
-    lastForecastFetch = millis() - 3600000UL + 60000UL; // Retry in 1 min
+    lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
     delete doc; // Free memory
     return;
   }
@@ -1415,7 +1415,7 @@ void parseForecastData(WiFiClientSecure& stream) {
   JsonArray weather = (*doc)["weather"];
   if (weather.isNull() || weather.size() < 3) {
     lastForecastError = "No Weather Arr";
-    lastForecastFetch = millis() - 3600000UL + 60000UL; // Retry in 1 min
+    lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
     delete doc; // Free memory
     return;
   }
@@ -1478,7 +1478,7 @@ void parseForecastData(WiFiClientSecure& stream) {
      lastForecastFetch = millis();
   } else {
      lastForecastError = "Parse Fail";
-     lastForecastFetch = millis() - 3600000UL + 60000UL; // Retry
+     lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
   }
 }
 
