@@ -62,7 +62,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.11";
+const String firmwareVersion = "v1.1.12";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -1703,6 +1703,7 @@ void startOTAUpdate(String targetETag) {
   uint8_t buff[1024];
   int received = 0;
   unsigned long lastDraw = 0;
+  unsigned long lastDataTime = millis();
 
   while (http.connected() || stream->available()) {
     size_t size = stream->available();
@@ -1715,6 +1716,7 @@ void startOTAUpdate(String targetETag) {
          break;
       }
       received += c;
+      lastDataTime = millis();
 
       // Cập nhật màn hình (giới hạn 5fps để không làm chậm mạng)
       if (millis() - lastDraw > 200) {
@@ -1733,6 +1735,16 @@ void startOTAUpdate(String targetETag) {
         display.display();
       }
     } else {
+      // Timeout nếu không có dữ liệu trong 10s
+      if (millis() - lastDataTime > 10000) {
+        display.clearDisplay();
+        display.setCursor(0,0);
+        display.println(F("Update Timeout!"));
+        display.display();
+        delay(3000);
+        ESP.restart();
+        return;
+      }
       delay(1);
     }
     // Nếu đã tải đủ dung lượng (trường hợp không chunked) thì thoát
