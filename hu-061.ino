@@ -32,6 +32,7 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <Adafruit_SSD1306.h>
+#include <ArduinoJson.h>
 #include <Adafruit_GFX.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
@@ -148,7 +149,6 @@ enum ForecastTaskState {
 ForecastTaskState forecastTaskState = F_IDLE;
 WiFiClientSecure forecastClient;
 unsigned long forecastTaskTimer = 0;
-String forecastResponseBuffer = "";
 String lastForecastError = "Wait...";
 
 // Function prototypes:
@@ -166,7 +166,7 @@ void handleWeatherTask();
 void parseWeatherData(String result);
 String removeAccents(String str);
 void handleForecastTask();
-void parseForecastData(String data);
+void parseForecastData(WiFiClientSecure& stream);
 void updateGreeting();
 void drawDynamicBackground();
 void drawSleepConfirmScreen();
@@ -1321,191 +1321,132 @@ String removeAccents(String str) {
 void handleForecastTask() {
   switch (forecastTaskState) {
     case F_IDLE:
+      if ((millis() - lastForecastFetch > 3600000UL || !forecastValid) && (weatherTaskState == W_IDLE)) {
+          forecastTaskState = F_CONNECTING;
+      }
       break;
 
     case F_CONNECTING:
-      if (WiFi.status() == WL_CONNECTED) {
-        forecastClient.setInsecure();
-        // Tăng buffer lên 16KB (Max SSL) để đảm bảo nhận được mọi gói tin từ Cloudflare
-        forecastClient.setBufferSizes(16384, 512);
-        forecastResponseBuffer = "";
-        // Giảm reserve xuống 4KB để nhường RAM cho SSL buffer (JSON dự báo thường < 4KB)
-        forecastResponseBuffer.reserve(4096);
-        if (forecastClient.connect("wttr.in", 443)) {
-           lastForecastError = "Connected";
-           // Chuẩn hóa tên thành phố: Bỏ dấu tiếng Việt và dùng %20 cho khoảng trắng
-           String encodedCity = removeAccents(city);
-           encodedCity.trim();
-           encodedCity.replace(" ", "%20");
-           forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.1\r\n" +
-                                "Host: wttr.in\r\n" +
-                                "User-Agent: Mozilla/5.0 (compatible; ESP8266; +http://arduino.cc)\r\n" +
-                                "Accept: application/json\r\n" +
-                                "Accept-Encoding: identity\r\n" +
-                                "Connection: close\r\n\r\n");
-           forecastTaskState = F_WAIT_HEADER;
-           forecastTaskTimer = millis();
-        } else {
-           lastForecastError = "Connect Fail";
-           forecastTaskState = F_IDLE;
-           lastForecastFetch = millis() - 3540000UL; // Retry in 1 min
-        }
-      }
-      break;
-
-    case F_WAIT_HEADER:
-      if (forecastClient.available()) {
-        forecastTaskState = F_READ_BODY;
-        forecastTaskTimer = millis();
-        lastForecastError = "Rx Header...";
-      }
-      if (millis() - forecastTaskTimer > 10000) { // Timeout
-        forecastClient.stop();
-        forecastTaskState = F_IDLE;
-        lastForecastError = "Timeout Header";
-      }
-      break;
-
-    case F_READ_BODY:
-      unsigned long startLoop = millis();
-      // Đọc theo khối để nhanh hơn
-      uint8_t tempBuf[128];
-      while (forecastClient.available()) {
-        int len = forecastClient.read(tempBuf, sizeof(tempBuf));
-        if (len > 0) {
-          for(int i=0; i<len; i++) forecastResponseBuffer += (char)tempBuf[i];
-        }
-        if (millis() - startLoop > 50) break; // Tăng thời gian đọc lên 50ms để xả buffer nhanh hơn
-      }
-
-      // Check for completion or timeout (increased to 15s)
-      bool timeout = (millis() - forecastTaskTimer > 15000);
-      bool closed = (!forecastClient.connected() && !forecastClient.available());
-      
-      if (closed || timeout) {
-        if (forecastResponseBuffer.length() > 0) {
-          forecastResponseBuffer.trim();
-          if (!forecastResponseBuffer.endsWith("}")) {
-             lastForecastError = "Truncated";
+      // This state now performs the entire blocking fetch and parse operation.
+      {
+          if (WiFi.status() != WL_CONNECTED) {
+              lastForecastError = "No WiFi";
+              lastForecastFetch = millis() - 3600000UL + 60000UL;
+              forecastTaskState = F_IDLE;
+              return;
           }
-          parseForecastData(forecastResponseBuffer);
-        } else {
-          // Debug: Hiển thị lý do Empty (thường do SSL fail hoặc Heap thấp)
-          lastForecastError = "Empty:H" + String(ESP.getFreeHeap());
-        }
-        
-        // Nếu timeout nhưng chưa parse thành công thì báo lỗi Timeout
-        if (timeout && lastForecastError != "Success") lastForecastError = "Timeout Body";
 
-        forecastClient.stop();
-        
-        // Logic thử lại: Nếu thành công thì hẹn 1 tiếng, nếu lỗi thì thử lại sau 1 phút
-        if (lastForecastError == "Success") lastForecastFetch = millis();
-        else lastForecastFetch = millis() - 3600000UL + 60000UL;
+          forecastClient.setInsecure();
+          // Use 16KB buffer to ensure SSL handshake success with Cloudflare
+          forecastClient.setBufferSizes(16384, 512);
 
-        forecastTaskState = F_IDLE;
+          if (!forecastClient.connect("wttr.in", 443)) {
+              lastForecastError = "Connect Fail";
+              lastForecastFetch = millis() - 3600000UL + 60000UL;
+              forecastTaskState = F_IDLE;
+              return;
+          }
+
+          lastForecastError = "Connected...";
+          String encodedCity = removeAccents(city);
+          encodedCity.trim();
+          encodedCity.replace(" ", "%20");
+          forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.1\r\n" +
+                               "Host: wttr.in\r\n" +
+                               "User-Agent: Mozilla/5.0 (compatible; ESP8266; +http://arduino.cc)\r\n" +
+                               "Accept: application/json\r\n" +
+                               "Accept-Encoding: identity\r\n" + // IMPORTANT: Request uncompressed data
+                               "Connection: close\r\n\r\n");
+
+          // Find the end of the headers. This is a short blocking call.
+          if (!forecastClient.find("\r\n\r\n")) {
+              lastForecastError = "Header Fail";
+              forecastClient.stop();
+              lastForecastFetch = millis() - 3600000UL + 60000UL;
+              forecastTaskState = F_IDLE;
+              return;
+          }
+
+          // Now the stream is at the body, parse it directly with ArduinoJson
+          parseForecastData(forecastClient);
+
+          forecastClient.stop();
+          forecastTaskState = F_IDLE;
       }
+      break;
+    
+    // These states are no longer used
+    case F_WAIT_HEADER:
+    case F_READ_BODY:
+      forecastTaskState = F_IDLE;
       break;
   }
 }
 
-void parseForecastData(String data) {
-  // Check HTTP Status
-  int firstSpace = data.indexOf(' ');
-  int secondSpace = data.indexOf(' ', firstSpace + 1);
-  if (firstSpace != -1 && secondSpace != -1) {
-      String codeStr = data.substring(firstSpace + 1, secondSpace);
-      if (codeStr != "200") {
-          lastForecastError = "HTTP " + codeStr;
-          return;
-      }
-  }
-
-  // Strip headers
-  int bodyPos = data.indexOf("\r\n\r\n");
-  if (bodyPos != -1) {
-    data = data.substring(bodyPos + 4);
-  }
-
-  int weatherIdx = data.indexOf("\"weather\":");
-  if (weatherIdx == -1) {
-    if (data.length() > 0) {
-       // Hiển thị 20 ký tự đầu để debug (ví dụ: "<!DOCTYPE" hoặc "Too many")
-       String snippet = data.substring(0, 20);
-       snippet.replace("\n", ""); snippet.replace("\r", "");
-       lastForecastError = "Rx:" + snippet;
-    } else {
-       lastForecastError = "BodyEmpty:H" + String(ESP.getFreeHeap());
-    }
+void parseForecastData(WiFiClientSecure& stream) {
+  // Allocate JsonDocument on the HEAP to avoid stack overflow.
+  // 4096 bytes is sufficient for wttr.in's 3-day forecast JSON (j1 format).
+  DynamicJsonDocument* doc = new DynamicJsonDocument(4096);
+  if (!doc) {
+    lastForecastError = "Heap Fail: JD"; // Failed to allocate JsonDocument
+    lastForecastFetch = millis() - 3600000UL + 60000UL;
     return;
   }
   
-  // Simple string parsing
-  int currentPos = weatherIdx;
+  // Parse JSON object directly from the stream
+  DeserializationError error = deserializeJson(*doc, stream);
+
+  if (error) {
+    lastForecastError = "JSON Err: ";
+    lastForecastError += error.c_str();
+    lastForecastFetch = millis() - 3600000UL + 60000UL; // Retry in 1 min
+    delete doc; // Free memory
+    return;
+  }
+  
+  JsonArray weather = (*doc)["weather"];
+  if (weather.isNull() || weather.size() < 3) {
+    lastForecastError = "No Weather Arr";
+    lastForecastFetch = millis() - 3600000UL + 60000UL; // Retry in 1 min
+    delete doc; // Free memory
+    return;
+  }
   
   for (int i = 0; i < 3; i++) {
-    // Extract Date
-    int dateKey = data.indexOf("\"date\":", currentPos);
-    if (dateKey == -1) {
-       forecasts[i].fullText = "";
-       break;
+    JsonObject day_forecast = weather[i];
+    if (day_forecast.isNull()) {
+        forecasts[i].fullText = "";
+        continue;
     }
-    int dateStart = data.indexOf("\"", dateKey + 7) + 1;
-    int dateEnd = data.indexOf("\"", dateStart);
-    String date = data.substring(dateStart, dateEnd);
-    currentPos = dateEnd;
+
+    // Extract Date
+    const char* date_p = day_forecast["date"];
+    String date = date_p ? String(date_p) : "";
 
     // Extract Max Temp (Search from date position)
-    int maxKey = data.indexOf("\"maxtempC\":", currentPos);
-    String maxT = "N/A";
-    if (maxKey != -1) {
-      int maxStart = data.indexOf("\"", maxKey + 11) + 1;
-      int maxEnd = data.indexOf("\"", maxStart);
-      maxT = data.substring(maxStart, maxEnd);
-    }
+    const char* maxT_p = day_forecast["maxtempC"];
+    String maxT = maxT_p ? String(maxT_p) : "N/A";
 
     // Extract Min Temp (Search from date position)
-    int minKey = data.indexOf("\"mintempC\":", currentPos);
-    String minT = "N/A";
-    if (minKey != -1) {
-      int minStart = data.indexOf("\"", minKey + 11) + 1;
-      int minEnd = data.indexOf("\"", minStart);
-      minT = data.substring(minStart, minEnd);
-    }
+    const char* minT_p = day_forecast["mintempC"];
+    String minT = minT_p ? String(minT_p) : "N/A";
 
     // Extract Hourly descriptions
     String morn = "", noon = "", aft = "", eve = "";
-    int hourlyKey = data.indexOf("\"hourly\":", currentPos);
-    if (hourlyKey != -1) {
-      currentPos = hourlyKey;
-      for (int h = 0; h < 8; h++) {
-        // Find time
-        String timeVal = "";
-        int timeKey = data.indexOf("\"time\":", currentPos);
-        if (timeKey != -1) {
-           int tStart = data.indexOf("\"", timeKey + 7) + 1;
-           int tEnd = data.indexOf("\"", tStart);
-           timeVal = data.substring(tStart, tEnd);
-           currentPos = tEnd;
-        }
-        
-        String desc = "";
-        // Look for weatherDesc
-        int wdKey = data.indexOf("\"weatherDesc\":", currentPos);
-        if (wdKey != -1) {
-           int valKey = data.indexOf("\"value\":", wdKey);
-           if (valKey != -1) {
-             int vStart = data.indexOf("\"", valKey + 8) + 1;
-             int vEnd = data.indexOf("\"", vStart);
-             desc = data.substring(vStart, vEnd);
-             currentPos = vEnd;
-           }
-        }
-        
-        if (timeVal == "900") morn = desc;
-        else if (timeVal == "1200") noon = desc;
-        else if (timeVal == "1500") aft = desc;
-        else if (timeVal == "2100") eve = desc;
+    JsonArray hourly = day_forecast["hourly"];
+    if (!hourly.isNull()) {
+      for(JsonObject h : hourly) {
+          const char* timeStr = h["time"];
+          if (!timeStr) continue;
+          int timeInt = atoi(timeStr);
+          
+          const char* desc_p = h["weatherDesc"][0]["value"];
+          String desc = desc_p ? String(desc_p) : "";
+
+          if (timeInt == 900) morn = desc;
+          else if (timeInt == 1200) noon = desc;
+          else if (timeInt == 1500) aft = desc;
+          else if (timeInt == 2100) eve = desc;
       }
     }
 
@@ -1520,9 +1461,16 @@ void parseForecastData(String data) {
     
     forecasts[i].fullText = text;
   }
+
+  delete doc; // IMPORTANT: Free the memory
+
   if (forecasts[0].fullText.length() > 0) {
      forecastValid = true;
-     if (lastForecastError == "Wait...") lastForecastError = "Success";
+     lastForecastError = "Success";
+     lastForecastFetch = millis();
+  } else {
+     lastForecastError = "Parse Fail";
+     lastForecastFetch = millis() - 3600000UL + 60000UL; // Retry
   }
 }
 
