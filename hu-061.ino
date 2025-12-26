@@ -149,6 +149,7 @@ ForecastTaskState forecastTaskState = F_IDLE;
 WiFiClient forecastClient;
 unsigned long forecastTaskTimer = 0;
 String forecastResponseBuffer = "";
+String lastForecastError = "Wait...";
 
 // Function prototypes:
 void loadSettings();
@@ -1056,6 +1057,7 @@ void drawForecastScreen() {
   } else {
     display.setCursor(0, 20);
     display.println(F("Loading..."));
+    display.println(lastForecastError);
   }
   display.display();
 }
@@ -1326,15 +1328,17 @@ void handleForecastTask() {
         forecastResponseBuffer = "";
         forecastResponseBuffer.reserve(6000);
         if (forecastClient.connect("wttr.in", 80)) {
+           lastForecastError = "Connected";
            String encodedCity = city;
            encodedCity.replace(" ", "-"); //Use hyphens for spaces
            forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.0\r\n" +
                                 "Host: wttr.in\r\n" +
-                                "User-Agent: ESP8266-Weather-Clock\r\n" +
+                                "User-Agent: curl/7.68.0\r\n" +
                                 "Connection: close\r\n\r\n");
            forecastTaskState = F_WAIT_HEADER;
            forecastTaskTimer = millis();
         } else {
+           lastForecastError = "Connect Fail";
            forecastTaskState = F_IDLE;
            lastForecastFetch = millis() - 3540000UL; // Retry in 1 min
         }
@@ -1345,10 +1349,12 @@ void handleForecastTask() {
       if (forecastClient.available()) {
         forecastTaskState = F_READ_BODY;
         forecastTaskTimer = millis();
+        lastForecastError = "Rx Header...";
       }
       if (millis() - forecastTaskTimer > 10000) { // Timeout
         forecastClient.stop();
         forecastTaskState = F_IDLE;
+        lastForecastError = "Timeout Header";
       }
       break;
 
@@ -1365,17 +1371,30 @@ void handleForecastTask() {
       if ((!forecastClient.connected() && !forecastClient.available()) || timeout) {
         if (forecastResponseBuffer.length() > 0) {
           parseForecastData(forecastResponseBuffer);
-          forecastValid = true;
+        } else {
+          lastForecastError = "Empty Data";
         }
         forecastClient.stop();
         lastForecastFetch = millis();
         forecastTaskState = F_IDLE;
+        if (timeout) lastForecastError = "Timeout Body";
       }
       break;
   }
 }
 
 void parseForecastData(String data) {
+  // Check HTTP Status
+  int firstSpace = data.indexOf(' ');
+  int secondSpace = data.indexOf(' ', firstSpace + 1);
+  if (firstSpace != -1 && secondSpace != -1) {
+      String codeStr = data.substring(firstSpace + 1, secondSpace);
+      if (codeStr != "200") {
+          lastForecastError = "HTTP " + codeStr;
+          return;
+      }
+  }
+
   // Strip headers
   int bodyPos = data.indexOf("\r\n\r\n");
   if (bodyPos != -1) {
@@ -1383,7 +1402,15 @@ void parseForecastData(String data) {
   }
 
   int weatherIdx = data.indexOf("\"weather\":");
-  if (weatherIdx == -1) return;
+  if (weatherIdx == -1) {
+    lastForecastError = "No JSON";
+    if (data.length() > 0) {
+       String snippet = data.substring(0, 12);
+       snippet.replace("\n", ""); snippet.replace("\r", "");
+       lastForecastError = "Rx:" + snippet;
+    }
+    return;
+  }
   
   // Simple string parsing
   int currentPos = weatherIdx;
@@ -1462,6 +1489,8 @@ void parseForecastData(String data) {
     
     forecasts[i].fullText = text;
   }
+  forecastValid = true;
+  lastForecastError = "Success";
 }
 
 void updateGreeting() {
