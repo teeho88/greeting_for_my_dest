@@ -1384,17 +1384,25 @@ void handleForecastTask() {
 }
 
 void parseForecastData(WiFiClientSecure& stream) {
+  // Use a filter to reduce memory usage by ignoring unused fields
+  StaticJsonDocument<200> filter;
+  filter["weather"][0]["date"] = true;
+  filter["weather"][0]["maxtempC"] = true;
+  filter["weather"][0]["mintempC"] = true;
+  filter["weather"][0]["hourly"][0]["time"] = true;
+  filter["weather"][0]["hourly"][0]["weatherDesc"][0]["value"] = true;
+
   // Allocate JsonDocument on the HEAP to avoid stack overflow.
-  // 4096 bytes is sufficient for wttr.in's 3-day forecast JSON (j1 format).
-  DynamicJsonDocument* doc = new DynamicJsonDocument(4096);
+  // 5120 bytes is sufficient with filter
+  DynamicJsonDocument* doc = new DynamicJsonDocument(5120);
   if (!doc) {
     lastForecastError = "Heap Fail: JD"; // Failed to allocate JsonDocument
     lastForecastFetch = millis() - 3600000UL + 60000UL;
     return;
   }
   
-  // Parse JSON object directly from the stream
-  DeserializationError error = deserializeJson(*doc, stream);
+  // Parse JSON object directly from the stream with filter
+  DeserializationError error = deserializeJson(*doc, stream, DeserializationOption::Filter(filter));
 
   if (error) {
     lastForecastError = "JSON Err: ";
