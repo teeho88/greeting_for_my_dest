@@ -61,7 +61,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.6";
+const String firmwareVersion = "v1.1.7";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -1326,8 +1326,8 @@ void handleForecastTask() {
     case F_CONNECTING:
       if (WiFi.status() == WL_CONNECTED) {
         forecastClient.setInsecure();
-        // Dùng buffer 4KB (thay vì 16KB) để tiết kiệm RAM nhưng vẫn đủ giải mã TLS
-        forecastClient.setBufferSizes(4096, 512);
+        // Tăng buffer lên 8KB để tránh mất dữ liệu (Truncated)
+        forecastClient.setBufferSizes(8192, 512);
         forecastResponseBuffer = "";
         forecastResponseBuffer.reserve(6000);
         if (forecastClient.connect("wttr.in", 443)) {
@@ -1378,6 +1378,10 @@ void handleForecastTask() {
       
       if (closed || timeout) {
         if (forecastResponseBuffer.length() > 0) {
+          forecastResponseBuffer.trim();
+          if (!forecastResponseBuffer.endsWith("}")) {
+             lastForecastError = "Truncated";
+          }
           parseForecastData(forecastResponseBuffer);
         } else {
           lastForecastError = "Empty Data";
@@ -1433,7 +1437,10 @@ void parseForecastData(String data) {
   for (int i = 0; i < 3; i++) {
     // Extract Date
     int dateKey = data.indexOf("\"date\":", currentPos);
-    if (dateKey == -1) break;
+    if (dateKey == -1) {
+       forecasts[i].fullText = "";
+       break;
+    }
     int dateStart = data.indexOf("\"", dateKey + 7) + 1;
     int dateEnd = data.indexOf("\"", dateStart);
     String date = data.substring(dateStart, dateEnd);
@@ -1504,8 +1511,10 @@ void parseForecastData(String data) {
     
     forecasts[i].fullText = text;
   }
-  forecastValid = true;
-  lastForecastError = "Success";
+  if (forecasts[0].fullText.length() > 0) {
+     forecastValid = true;
+     if (lastForecastError == "Wait...") lastForecastError = "Success";
+  }
 }
 
 void updateGreeting() {
