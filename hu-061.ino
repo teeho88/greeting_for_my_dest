@@ -61,7 +61,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.4";
+const String firmwareVersion = "v1.1.5";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -1329,11 +1329,14 @@ void handleForecastTask() {
         forecastResponseBuffer.reserve(6000);
         if (forecastClient.connect("wttr.in", 80)) {
            lastForecastError = "Connected";
-           String encodedCity = city;
-           encodedCity.replace(" ", "-"); //Use hyphens for spaces
+           // Chuẩn hóa tên thành phố: Bỏ dấu tiếng Việt và dùng %20 cho khoảng trắng
+           String encodedCity = removeAccents(city);
+           encodedCity.trim();
+           encodedCity.replace(" ", "%20");
            forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.0\r\n" +
                                 "Host: wttr.in\r\n" +
-                                "User-Agent: ESP8266\r\n" +
+                                "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36\r\n" +
+                                "Accept: application/json, text/plain, */*\r\n" +
                                 "Connection: close\r\n\r\n");
            forecastTaskState = F_WAIT_HEADER;
            forecastTaskTimer = millis();
