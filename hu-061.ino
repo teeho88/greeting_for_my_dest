@@ -62,7 +62,8 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.13";
+const String firmwareVersion = "v1.1.14";
+#define TIME_HEADER_MSG "Chuc em yeu mot ngay vui ve!"
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -861,7 +862,24 @@ void drawTimeScreen() {
   if (!displayInitialized) {
     return;
   }
-  display.setTextWrap(true);
+  
+  static int scrollX = 128;
+  static unsigned long lastScroll = 0;
+  static int currentScreenCheck = -1;
+
+  // Reset scroll when entering screen
+  if (currentScreenCheck != currentScreen) {
+    scrollX = 128;
+    currentScreenCheck = currentScreen;
+  }
+
+  // Update scroll position (Speed for Time Screen)
+  if (millis() - lastScroll > 30) {
+    scrollX -= 1;
+    lastScroll = millis();
+  }
+
+  display.setTextWrap(false);
   display.clearDisplay();
   
   drawDynamicBackground();
@@ -886,11 +904,16 @@ void drawTimeScreen() {
   display.setFont(NULL); // default font
   int16_t x1, y1;
   uint16_t w, h;
-  display.getTextBounds(dayName, 0, 0, &x1, &y1, &w, &h);
-  // center horizontally
-  int dayX = (128 - w) / 2;
-  display.setCursor(dayX, 0);
-  display.print(dayName);
+  
+  String headerText = dayName + " - " + String(TIME_HEADER_MSG);
+  display.getTextBounds(headerText, 0, 0, &x1, &y1, &w, &h);
+  
+  display.setCursor(scrollX, 0);
+  display.print(headerText);
+  
+  if (scrollX < -((int)w)) {
+    scrollX = 128;
+  }
 
   // Time HH:MM in large font, centered
   display.setFont(&FreeMonoBold18pt7b);
@@ -1124,7 +1147,7 @@ void drawGreetingScreen() {
   }
 
   // Update scroll position
-  if (millis() - lastScroll > 20) {
+  if (millis() - lastScroll > 13) {
     scrollX -= 2;
     lastScroll = millis();
   }
@@ -1350,7 +1373,7 @@ void handleForecastTask() {
           lastForecastError = "Connected...";
           String encodedCity = removeAccents(city);
           encodedCity.trim();
-          encodedCity.replace(" ", "%20");
+          encodedCity.replace(" ", "-"); // Use hyphens for spaces
           forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.1\r\n" +
                                "Host: wttr.in\r\n" +
                                "User-Agent: Mozilla/5.0 (compatible; ESP8266; +http://arduino.cc)\r\n" +
