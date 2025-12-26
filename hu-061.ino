@@ -62,7 +62,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.10";
+const String firmwareVersion = "v1.1.11";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
