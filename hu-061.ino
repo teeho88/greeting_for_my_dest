@@ -61,7 +61,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.7";
+const String firmwareVersion = "v1.1.8";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -1326,8 +1326,8 @@ void handleForecastTask() {
     case F_CONNECTING:
       if (WiFi.status() == WL_CONNECTED) {
         forecastClient.setInsecure();
-        // Tăng buffer lên 8KB để tránh mất dữ liệu (Truncated)
-        forecastClient.setBufferSizes(8192, 512);
+        // Tối ưu buffer 5KB: Đủ chứa JSON dự báo (thường ~3-4KB) mà không gây tràn RAM
+        forecastClient.setBufferSizes(5120, 512);
         forecastResponseBuffer = "";
         forecastResponseBuffer.reserve(6000);
         if (forecastClient.connect("wttr.in", 443)) {
@@ -1366,9 +1366,13 @@ void handleForecastTask() {
 
     case F_READ_BODY:
       unsigned long startLoop = millis();
+      // Đọc theo khối để nhanh hơn
+      uint8_t tempBuf[128];
       while (forecastClient.available()) {
-        char c = (char)forecastClient.read();
-        forecastResponseBuffer += c;
+        int len = forecastClient.read(tempBuf, sizeof(tempBuf));
+        if (len > 0) {
+          for(int i=0; i<len; i++) forecastResponseBuffer += (char)tempBuf[i];
+        }
         if (millis() - startLoop > 5) break; // Limit blocking time
       }
 
@@ -1422,11 +1426,13 @@ void parseForecastData(String data) {
 
   int weatherIdx = data.indexOf("\"weather\":");
   if (weatherIdx == -1) {
-    lastForecastError = "No JSON";
     if (data.length() > 0) {
-       String snippet = data.substring(0, 12);
+       // Hiển thị 20 ký tự đầu để debug (ví dụ: "<!DOCTYPE" hoặc "Too many")
+       String snippet = data.substring(0, 20);
        snippet.replace("\n", ""); snippet.replace("\r", "");
        lastForecastError = "Rx:" + snippet;
+    } else {
+       lastForecastError = "Body Empty";
     }
     return;
   }
