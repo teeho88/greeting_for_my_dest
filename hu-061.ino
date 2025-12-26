@@ -478,7 +478,7 @@ void startConfigPortal() {
       display.setFont(NULL);
       display.setTextSize(1);
       display.setCursor(0, 0);
-      display.println(F("AP mode"));
+      display.println(F("Config mode"));
       display.setCursor(0, 10);
       display.println(F("SSID: ") + String(AP_SSID));
       display.setCursor(0, 20);
