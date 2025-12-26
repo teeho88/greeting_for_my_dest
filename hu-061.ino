@@ -1333,7 +1333,7 @@ void handleForecastTask() {
            encodedCity.replace(" ", "-"); //Use hyphens for spaces
            forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.0\r\n" +
                                 "Host: wttr.in\r\n" +
-                                "User-Agent: curl/7.68.0\r\n" +
+                                "User-Agent: ESP8266\r\n" +
                                 "Connection: close\r\n\r\n");
            forecastTaskState = F_WAIT_HEADER;
            forecastTaskTimer = millis();
@@ -1368,16 +1368,25 @@ void handleForecastTask() {
 
       // Check for completion or timeout (increased to 15s)
       bool timeout = (millis() - forecastTaskTimer > 15000);
-      if ((!forecastClient.connected() && !forecastClient.available()) || timeout) {
+      bool closed = (!forecastClient.connected() && !forecastClient.available());
+      
+      if (closed || timeout) {
         if (forecastResponseBuffer.length() > 0) {
           parseForecastData(forecastResponseBuffer);
         } else {
           lastForecastError = "Empty Data";
         }
+        
+        // Nếu timeout nhưng chưa parse thành công thì báo lỗi Timeout
+        if (timeout && lastForecastError != "Success") lastForecastError = "Timeout Body";
+
         forecastClient.stop();
-        lastForecastFetch = millis();
+        
+        // Logic thử lại: Nếu thành công thì hẹn 1 tiếng, nếu lỗi thì thử lại sau 1 phút
+        if (lastForecastError == "Success") lastForecastFetch = millis();
+        else lastForecastFetch = millis() - 3600000UL + 60000UL;
+
         forecastTaskState = F_IDLE;
-        if (timeout) lastForecastError = "Timeout Body";
       }
       break;
   }
