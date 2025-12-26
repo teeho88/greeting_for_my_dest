@@ -1326,10 +1326,11 @@ void handleForecastTask() {
     case F_CONNECTING:
       if (WiFi.status() == WL_CONNECTED) {
         forecastClient.setInsecure();
-        // Tăng buffer lên 12KB để đảm bảo nhận được các gói tin SSL lớn từ Cloudflare
-        forecastClient.setBufferSizes(12288, 512);
+        // Tăng buffer lên 16KB (Max SSL) để đảm bảo nhận được mọi gói tin từ Cloudflare
+        forecastClient.setBufferSizes(16384, 512);
         forecastResponseBuffer = "";
-        forecastResponseBuffer.reserve(6500);
+        // Giảm reserve xuống 4KB để nhường RAM cho SSL buffer (JSON dự báo thường < 4KB)
+        forecastResponseBuffer.reserve(4096);
         if (forecastClient.connect("wttr.in", 443)) {
            lastForecastError = "Connected";
            // Chuẩn hóa tên thành phố: Bỏ dấu tiếng Việt và dùng %20 cho khoảng trắng
@@ -1338,8 +1339,9 @@ void handleForecastTask() {
            encodedCity.replace(" ", "%20");
            forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.1\r\n" +
                                 "Host: wttr.in\r\n" +
-                                "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36\r\n" +
-                                "Accept: application/json, text/plain, */*\r\n" +
+                                "User-Agent: Mozilla/5.0 (compatible; ESP8266; +http://arduino.cc)\r\n" +
+                                "Accept: application/json\r\n" +
+                                "Accept-Encoding: identity\r\n" +
                                 "Connection: close\r\n\r\n");
            forecastTaskState = F_WAIT_HEADER;
            forecastTaskTimer = millis();
