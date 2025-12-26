@@ -61,7 +61,7 @@ const int ADDR_ETAG = 610;
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.8";
+const String firmwareVersion = "v1.1.9";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -1326,8 +1326,8 @@ void handleForecastTask() {
     case F_CONNECTING:
       if (WiFi.status() == WL_CONNECTED) {
         forecastClient.setInsecure();
-        // Tăng buffer lên 6KB để đảm bảo nhận đủ JSON mà vẫn an toàn cho RAM
-        forecastClient.setBufferSizes(6144, 512);
+        // Tăng buffer lên 12KB để đảm bảo nhận được các gói tin SSL lớn từ Cloudflare
+        forecastClient.setBufferSizes(12288, 512);
         forecastResponseBuffer = "";
         forecastResponseBuffer.reserve(6500);
         if (forecastClient.connect("wttr.in", 443)) {
@@ -1336,7 +1336,7 @@ void handleForecastTask() {
            String encodedCity = removeAccents(city);
            encodedCity.trim();
            encodedCity.replace(" ", "%20");
-           forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.0\r\n" +
+           forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.1\r\n" +
                                 "Host: wttr.in\r\n" +
                                 "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36\r\n" +
                                 "Accept: application/json, text/plain, */*\r\n" +
@@ -1373,7 +1373,7 @@ void handleForecastTask() {
         if (len > 0) {
           for(int i=0; i<len; i++) forecastResponseBuffer += (char)tempBuf[i];
         }
-        if (millis() - startLoop > 5) break; // Limit blocking time
+        if (millis() - startLoop > 50) break; // Tăng thời gian đọc lên 50ms để xả buffer nhanh hơn
       }
 
       // Check for completion or timeout (increased to 15s)
@@ -1388,7 +1388,8 @@ void handleForecastTask() {
           }
           parseForecastData(forecastResponseBuffer);
         } else {
-          lastForecastError = "Empty Data";
+          // Debug: Hiển thị lý do Empty (thường do SSL fail hoặc Heap thấp)
+          lastForecastError = "Empty:H" + String(ESP.getFreeHeap());
         }
         
         // Nếu timeout nhưng chưa parse thành công thì báo lỗi Timeout
@@ -1432,7 +1433,7 @@ void parseForecastData(String data) {
        snippet.replace("\n", ""); snippet.replace("\r", "");
        lastForecastError = "Rx:" + snippet;
     } else {
-       lastForecastError = "Body Empty";
+       lastForecastError = "BodyEmpty:H" + String(ESP.getFreeHeap());
     }
     return;
   }
