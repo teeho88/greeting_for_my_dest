@@ -64,7 +64,7 @@ const int ADDR_ETAG = 610;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.15";
+const String firmwareVersion = "v1.1.16";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
