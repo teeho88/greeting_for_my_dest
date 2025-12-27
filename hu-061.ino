@@ -59,12 +59,13 @@ const int ADDR_GREETING = 220;
 const int ADDR_FIRMWARE_URL = 430;
 const int ADDR_SIGNATURE = 600;  // 4-byte signature "CFG1" to indicate valid config
 const int ADDR_ETAG = 610;
+const int ADDR_LUCKY_URL = 710;
 
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.19";
+const String firmwareVersion = "v1.1.21";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -86,6 +87,7 @@ String wifiPass = "";
 String city = "";
 String greetingUrl = "";
 String firmwareUrl = "";
+String luckyImageUrl = "";
 int timezoneOffset = 0;  // in seconds
 
 // Weather data variables:
@@ -111,6 +113,8 @@ int greetingIndex = 0;
 // Lucky Number data
 int luckyNumber = 0;
 int lastLuckyDay = -1;
+uint8_t* luckyImageBuffer = NULL;
+bool luckyImageValid = false;
 
 // System Modes: 0=Normal, 1=Config, 2=Update, 3=SleepConfirm, 4=OTA_GitHub
 int systemMode = 0;
@@ -171,6 +175,7 @@ String removeAccents(String str);
 void handleForecastTask();
 void parseForecastData(WiFiClientSecure& stream);
 void updateGreeting();
+void updateLuckyImage();
 void drawDynamicBackground();
 void drawSleepConfirmScreen();
 void checkForFirmwareUpdate();
@@ -305,6 +310,10 @@ void setup() {
   // Initial greeting fetch
   updateGreeting();
   lastGreetingUpdate = millis();
+  
+  if (luckyImageUrl != "") {
+    updateLuckyImage();
+  }
   lastOTACheck = millis();
 
   weatherTaskState = W_IDLE;
@@ -414,6 +423,9 @@ void loop() {
   if (ptm->tm_mday != lastLuckyDay) {
     randomSeed(micros());
     luckyNumber = random(0, 100); // 0 to 99
+    if (luckyImageUrl != "") {
+      updateLuckyImage();
+    }
     lastLuckyDay = ptm->tm_mday;
   }
 
@@ -518,6 +530,7 @@ void startConfigPortal() {
     page += F("<label>City:</label><input type='text' name='city' value='") + city + F("' required>");
     page += F("<label>Greeting URL (Gist Raw):</label><input type='text' name='greeting' value='") + greetingUrl + F("'>");
     page += F("<label>Firmware URL (.bin):</label><input type='text' name='firmware' value='") + firmwareUrl + F("'>");
+    page += F("<label>Lucky Image URL (1KB Bin):</label><input type='text' name='lucky_img' value='") + luckyImageUrl + F("'>");
     // Timezone dropdown
     page += F("<label>Timezone:</label><select name='tz'>");
     // Populate timezone options from UTC-12 to UTC+14
@@ -602,6 +615,7 @@ void handleConfigForm() {
   String newCity = server.arg("city");
   String newGreeting = server.arg("greeting");
   String newFirmware = server.arg("firmware");
+  String newLuckyImg = server.arg("lucky_img");
   String tzStr = server.arg("tz");
 
   if (ssid.length() > 0 && newCity.length() > 0 && tzStr.length() > 0) {
@@ -610,6 +624,12 @@ void handleConfigForm() {
     city = newCity;
     greetingUrl = newGreeting;
     firmwareUrl = newFirmware;
+    luckyImageUrl = newLuckyImg;
+    if (luckyImageUrl == "" && luckyImageBuffer) {
+       free(luckyImageBuffer);
+       luckyImageBuffer = NULL;
+       luckyImageValid = false;
+    }
     timezoneOffset = tzStr.toInt();
     // Save to EEPROM
     saveSettings();
@@ -695,6 +715,18 @@ void loadSettings() {
   } else {
     currentFirmwareETag = "";
   }
+  // Read Lucky Image URL
+  len = EEPROM.read(ADDR_LUCKY_URL);
+  if (len > 0 && len < 0xFF) {
+    char buf[200];
+    for (int i = 0; i < len && i < 199; ++i) {
+      buf[i] = char(EEPROM.read(ADDR_LUCKY_URL + 1 + i));
+    }
+    buf[len] = '\0';
+    luckyImageUrl = String(buf);
+  } else {
+    luckyImageUrl = "";
+  }
   // Read Timezone offset (int32)
   uint32_t b0 = EEPROM.read(ADDR_TZ);
   uint32_t b1 = EEPROM.read(ADDR_TZ + 1);
@@ -756,6 +788,17 @@ void saveSettings() {
     }
   } else {
     EEPROM.write(ADDR_FIRMWARE_URL, 0);
+  }
+  // Write Lucky Image URL
+  len = luckyImageUrl.length();
+  if (len > 200) len = 200;
+  if (len > 0) {
+    EEPROM.write(ADDR_LUCKY_URL, len);
+    for (int i = 0; i < len; ++i) {
+      EEPROM.write(ADDR_LUCKY_URL + 1 + i, luckyImageUrl[i]);
+    }
+  } else {
+    EEPROM.write(ADDR_LUCKY_URL, 0);
   }
   // Write Timezone (int32)
   int tz = timezoneOffset;
@@ -1100,6 +1143,13 @@ void drawForecastScreen() {
 
 void drawLuckyNumberScreen() {
   if (!displayInitialized) return;
+
+  if (luckyImageValid && luckyImageBuffer != NULL) {
+      display.clearDisplay();
+      display.drawBitmap(0, 0, luckyImageBuffer, 128, 64, SSD1306_WHITE);
+      display.display();
+      return;
+  }
   
   static int scrollX = 128;
   static unsigned long lastScroll = 0;
@@ -1123,7 +1173,7 @@ void drawLuckyNumberScreen() {
   
   // Title
   display.setFont(NULL);
-  String title = F("So may man cua em yeu ngay hom nay \x03\x03\x03");
+  String title = F("So may man cua em yeu ngay hom nay \x03\x03\x03 ") + String(luckyNumber);
   int16_t x1, y1; uint16_t w, h;
   display.getTextBounds(title, 0, 0, &x1, &y1, &w, &h);
   display.setCursor(scrollX, 0);
@@ -1573,6 +1623,50 @@ void updateGreeting() {
       
       if (!found) greetingIndex = 0;
       else greetingIndex++;
+    }
+    http.end();
+  }
+  delete client;
+}
+
+void updateLuckyImage() {
+  if (WiFi.status() != WL_CONNECTED || luckyImageUrl == "") return;
+
+  if (!luckyImageBuffer) {
+    luckyImageBuffer = (uint8_t*) malloc(1024);
+  }
+  if (!luckyImageBuffer) return;
+
+  WiFiClientSecure *client = new WiFiClientSecure;
+  if (!client) return;
+  client->setInsecure();
+  client->setBufferSizes(4096, 512);
+  client->setTimeout(10000);
+
+  HTTPClient http;
+  String url = luckyImageUrl;
+  if (url.indexOf('?') == -1) url += "?t=" + String(millis());
+  else url += "&t=" + String(millis());
+
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setUserAgent("ESP8266-Weather-Clock");
+  
+  if (http.begin(*client, url)) {
+    int httpCode = http.GET();
+    if (httpCode == HTTP_CODE_OK) {
+       int len = http.getSize();
+       if (len > 0) {
+          WiFiClient *stream = http.getStreamPtr();
+          int total = 0;
+          unsigned long start = millis();
+          while((http.connected() || stream->available()) && total < 1024 && millis() - start < 5000) {
+             if(stream->available()) {
+                 luckyImageBuffer[total++] = stream->read();
+             }
+             yield();
+          }
+          if (total == 1024) luckyImageValid = true;
+       }
     }
     http.end();
   }
