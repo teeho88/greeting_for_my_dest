@@ -65,7 +65,7 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.24";
+const String firmwareVersion = "v1.1.25";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -1172,7 +1172,7 @@ void drawLuckyNumberScreen() {
   // Title
   display.setTextColor(SSD1306_WHITE, SSD1306_BLACK); // Use black background for text readability
   display.setFont(NULL);
-  String title = F("So may man cua em yeu ngay hom nay \x03\x03\x03 ") + String(luckyNumber);
+  String title = F("So may man cua em yeu ngay hom nay la \x03\x03\x03 ") + String(luckyNumber);
   int16_t x1, y1; uint16_t w, h;
   display.getTextBounds(title, 0, 0, &x1, &y1, &w, &h);
   display.setCursor(scrollX, 0);
