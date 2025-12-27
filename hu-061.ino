@@ -31,6 +31,7 @@
 #include <ESP8266httpUpdate.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
+#include <DNSServer.h>
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
 #include <Adafruit_GFX.h>
@@ -61,9 +62,10 @@ const int ADDR_ETAG = 610;
 
 // Wi-Fi and server:
 ESP8266WebServer server(80);
+DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.14";
-#define TIME_HEADER_MSG "Chuc em yeu mot ngay vui ve!"
+const String firmwareVersion = "v1.1.15";
+#define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -388,6 +390,7 @@ void loop() {
 
   // If in config portal mode, handle web server
   if (systemMode == 1 || systemMode == 2) {
+    dnsServer.processNextRequest();
     server.handleClient();
     // In AP mode, do not run normal display loop
     return;
@@ -472,6 +475,10 @@ void startConfigPortal() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID);
   IPAddress apIP = WiFi.softAPIP();
+
+  // Start DNS Server for Captive Portal (redirect all to AP IP)
+  dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+  dnsServer.start(53, "*", apIP);
 
     if (displayReady && systemMode == 1) {
       display.clearDisplay();
@@ -565,6 +572,12 @@ void startConfigPortal() {
         }
       }
       yield();
+    });
+
+    // Redirect all other requests to root (Captive Portal requirement)
+    server.onNotFound([]() {
+      server.sendHeader("Location", String("http://192.168.4.1/"), true);
+      server.send(302, "text/plain", "");
     });
 
     server.begin();
@@ -1785,6 +1798,8 @@ void startOTAUpdate(String targetETag) {
     if (contentLength > 0 && received >= contentLength) break;
   }
 
+  http.end();
+
   if (Update.end(true)) {
       if (targetETag != "") {
         int len = targetETag.length();
@@ -1801,6 +1816,9 @@ void startOTAUpdate(String targetETag) {
       display.display();
       delay(1000);
       ESP.restart();
+      delay(1000);
+      ESP.reset();
+      while(1) {};
   } else {
       display.clearDisplay();
       display.setCursor(0,0);
@@ -1810,5 +1828,4 @@ void startOTAUpdate(String targetETag) {
       delay(5000);
       ESP.restart();
   }
-  http.end();
 }
