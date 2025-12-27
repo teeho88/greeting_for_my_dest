@@ -1816,9 +1816,6 @@ void startOTAUpdate(String targetETag) {
       display.display();
       delay(1000);
       ESP.restart();
-      delay(1000);
-      ESP.reset();
-      while(1) {};
   } else {
       display.clearDisplay();
       display.setCursor(0,0);
