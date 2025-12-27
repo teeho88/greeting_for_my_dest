@@ -64,7 +64,7 @@ const int ADDR_ETAG = 610;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.18";
+const String firmwareVersion = "v1.1.19";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -1214,6 +1214,7 @@ void handleWeatherTask() {
            weatherTaskState = W_WAIT_HEADER;
            weatherTaskTimer = millis();
            weatherResponseBuffer = "";
+           weatherResponseBuffer.reserve(2048); // Reserve memory to reduce fragmentation
         } else {
            weatherTaskState = W_IDLE;
            lastWeatherFetch = millis() - 840000UL; // Retry in 1 min
@@ -1523,11 +1524,13 @@ void updateGreeting() {
     return;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
+  // Use heap allocation for client to avoid stack overflow
+  WiFiClientSecure *client = new WiFiClientSecure;
+  if (!client) return;
+  client->setInsecure();
   // Optimize buffer for ESP8266 RAM (Default is too large)
-  client.setBufferSizes(1024, 1024);
-  client.setTimeout(10000);
+  client->setBufferSizes(1024, 1024);
+  client->setTimeout(10000);
 
   HTTPClient http;
   
@@ -1545,14 +1548,14 @@ void updateGreeting() {
   http.addHeader("Cache-Control", "no-cache");
   http.useHTTP10(true); // Force HTTP 1.0 to avoid Chunked Transfer Encoding
 
-  if (http.begin(client, url)) {
+  if (http.begin(*client, url)) {
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
       WiFiClient *stream = http.getStreamPtr();
       int currentIndex = 0;
       bool found = false;
       
-      while (http.connected() || stream->available()) {
+      while (http.connected() || (stream && stream->available())) {
         if (stream->available()) {
           String line = stream->readStringUntil('\n');
           line.trim();
@@ -1573,6 +1576,7 @@ void updateGreeting() {
     }
     http.end();
   }
+  delete client;
 }
 
 void enterSleep() {
@@ -1609,9 +1613,10 @@ void enterSleep() {
 void checkForFirmwareUpdate() {
   if (WiFi.status() != WL_CONNECTED || firmwareUrl == "") return;
 
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(5000);
+  WiFiClientSecure *client = new WiFiClientSecure;
+  if (!client) return;
+  client->setInsecure();
+  client->setTimeout(5000);
   
   HTTPClient http;
   String url = firmwareUrl;
@@ -1623,7 +1628,7 @@ void checkForFirmwareUpdate() {
   http.setUserAgent("ESP8266-Weather-Clock");
   
   // Use HEAD request to check headers only (save bandwidth)
-  if (http.begin(client, url)) {
+  if (http.begin(*client, url)) {
     const char * headerKeys[] = {"ETag"};
     http.collectHeaders(headerKeys, 1);
     
@@ -1642,6 +1647,7 @@ void checkForFirmwareUpdate() {
     }
     http.end();
   }
+  delete client;
 }
 
 void startOTAUpdate(String targetETag) {
