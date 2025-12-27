@@ -65,7 +65,7 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.34";
+const String firmwareVersion = "v1.1.35";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -1736,13 +1736,6 @@ void enterSleep() {
 void checkForFirmwareUpdate() {
   if (WiFi.status() != WL_CONNECTED || firmwareUrl == "") return;
 
-  // Visual Debugging: Show we are checking
-  display.clearDisplay();
-  display.setFont(NULL);
-  display.setCursor(0, 0);
-  display.println(F("Checking Update..."));
-  display.display();
-
   WiFiClientSecure *client = new WiFiClientSecure;
   if (!client) return;
   client->setInsecure();
@@ -1768,27 +1761,20 @@ void checkForFirmwareUpdate() {
     if (httpCode == HTTP_CODE_OK) {
        String newETag = http.header("ETag");
        
-       // Visual Debugging: Show ETags
-       display.setCursor(0, 10);
-       display.print(F("L:")); display.println(currentFirmwareETag.substring(0, 10));
-       display.print(F("R:")); display.println(newETag.substring(0, 10));
-       display.display();
-       
        if (newETag != "") {
          // If local ETag is empty (first run) OR different from server, trigger update
          if (currentFirmwareETag == "" || currentFirmwareETag != newETag) {
+           display.clearDisplay();
+           display.setFont(NULL);
+           display.setCursor(0, 0);
            display.println(F("Update Found!"));
+           display.print(F("L:")); display.println(currentFirmwareETag.substring(0, 10));
+           display.print(F("R:")); display.println(newETag.substring(0, 10));
            display.display();
-           delay(1000);
+           delay(3000);
            pendingOTA_ETag = newETag; // Set flag for loop() to handle
-         } else {
-           delay(2000); // Show "No Update" state briefly
          }
        }
-    } else {
-       display.print(F("HTTP Err: ")); display.println(httpCode);
-       display.display();
-       delay(2000);
     }
     http.end();
   }
