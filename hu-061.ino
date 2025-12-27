@@ -65,7 +65,7 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.30";
+const String firmwareVersion = "v1.1.31";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -123,6 +123,7 @@ bool apServerRunning = false;
 bool sleepSelectedYes = false; // false = Không, true = Có
 unsigned long lastOTACheck = 0;
 String currentFirmwareETag = "";
+String pendingOTA_ETag = "";
 
 // Snow effect data
 const int NUM_HEARTS = 10;
@@ -449,6 +450,12 @@ void loop() {
   if (now - lastOTACheck > 600000UL) {
     checkForFirmwareUpdate();
     lastOTACheck = now;
+  }
+  
+  // Handle pending OTA update in the main loop to ensure clean stack/heap
+  if (pendingOTA_ETag != "") {
+     startOTAUpdate(pendingOTA_ETag);
+     pendingOTA_ETag = "";
   }
 
   // Switch screen logic
@@ -1764,7 +1771,7 @@ void checkForFirmwareUpdate() {
            display.println(F("Update Found!"));
            display.display();
            delay(1000);
-           foundETag = newETag;
+           pendingOTA_ETag = newETag; // Set flag for loop() to handle
          } else {
            delay(2000); // Show "No Update" state briefly
          }
@@ -1777,10 +1784,6 @@ void checkForFirmwareUpdate() {
     http.end();
   }
   delete client;
-
-  if (foundETag != "") {
-    startOTAUpdate(foundETag);
-  }
 }
 
 void startOTAUpdate(String targetETag) {
@@ -1817,6 +1820,7 @@ void startOTAUpdate(String targetETag) {
   // Đảm bảo các client khác đã dừng để giải phóng bộ nhớ đệm SSL
   weatherClient.stop();
   forecastClient.stop();
+  WiFiClient::stopAll(); // Force stop all clients
 
   if (WiFi.status() != WL_CONNECTED) {
     display.println(F("Connecting WiFi..."));
@@ -1862,7 +1866,8 @@ void startOTAUpdate(String targetETag) {
     return;
   }
   client->setInsecure();
-  client->setBufferSizes(16384, 512); // Revert to 16KB for stability
+  // Reduce to 12KB to prevent OOM (HTTP -1) while keeping stability
+  client->setBufferSizes(12288, 512); 
   client->setTimeout(20000);
   
   HTTPClient http;
