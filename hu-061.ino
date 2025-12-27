@@ -65,7 +65,7 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.33";
+const String firmwareVersion = "v1.1.34";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -1982,10 +1982,22 @@ void startOTAUpdate(String targetETag) {
     if (contentLength > 0 && received >= contentLength) break;
   }
 
+  // Safety Check: Verify file size integrity before committing
+  if (contentLength > 0 && received != contentLength) {
+      display.clearDisplay();
+      display.setCursor(0,0);
+      display.println(F("Download Error!"));
+      display.println(F("Incomplete File"));
+      display.display();
+      delay(5000);
+      ESP.restart();
+      return;
+  }
+
   http.end();
   delete client;
 
-  if (Update.end(true)) {
+  if (Update.end(contentLength == -1)) {
       if (targetETag != "") {
         int len = targetETag.length();
         if (len > 90) len = 90;
