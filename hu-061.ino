@@ -65,7 +65,7 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.21";
+const String firmwareVersion = "v1.1.22";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -314,7 +314,8 @@ void setup() {
   if (luckyImageUrl != "") {
     updateLuckyImage();
   }
-  lastOTACheck = millis();
+  // Schedule first OTA check 30 seconds after boot (instead of 10 mins)
+  lastOTACheck = millis() - 600000UL + 30000UL;
 
   weatherTaskState = W_IDLE;
   forecastTaskState = F_IDLE;
@@ -1710,7 +1711,7 @@ void checkForFirmwareUpdate() {
   WiFiClientSecure *client = new WiFiClientSecure;
   if (!client) return;
   client->setInsecure();
-  client->setTimeout(5000);
+  client->setTimeout(10000);
   
   HTTPClient http;
   String url = firmwareUrl;
@@ -1721,13 +1722,14 @@ void checkForFirmwareUpdate() {
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.setUserAgent("ESP8266-Weather-Clock");
   
-  // Use HEAD request to check headers only (save bandwidth)
+  // Use GET with Range header to check headers (more robust than HEAD)
   if (http.begin(*client, url)) {
     const char * headerKeys[] = {"ETag"};
     http.collectHeaders(headerKeys, 1);
+    http.addHeader("Range", "bytes=0-0");
     
-    int httpCode = http.sendRequest("HEAD");
-    if (httpCode == HTTP_CODE_OK) {
+    int httpCode = http.GET();
+    if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_PARTIAL_CONTENT) {
        String newETag = http.header("ETag");
        if (newETag != "") {
          if (currentFirmwareETag == "") {
