@@ -65,7 +65,7 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.22";
+const String firmwareVersion = "v1.1.24";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -1145,13 +1145,6 @@ void drawForecastScreen() {
 void drawLuckyNumberScreen() {
   if (!displayInitialized) return;
 
-  if (luckyImageValid && luckyImageBuffer != NULL) {
-      display.clearDisplay();
-      display.drawBitmap(0, 0, luckyImageBuffer, 128, 64, SSD1306_WHITE);
-      display.display();
-      return;
-  }
-  
   static int scrollX = 128;
   static unsigned long lastScroll = 0;
   static int currentScreenCheck = -1;
@@ -1170,9 +1163,14 @@ void drawLuckyNumberScreen() {
 
   display.setTextWrap(false);
   display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
+
+  // Draw Image if available
+  if (luckyImageValid && luckyImageBuffer != NULL) {
+      display.drawBitmap(0, 0, luckyImageBuffer, 128, 64, SSD1306_WHITE);
+  }
   
   // Title
+  display.setTextColor(SSD1306_WHITE, SSD1306_BLACK); // Use black background for text readability
   display.setFont(NULL);
   String title = F("So may man cua em yeu ngay hom nay \x03\x03\x03 ") + String(luckyNumber);
   int16_t x1, y1; uint16_t w, h;
@@ -1184,15 +1182,19 @@ void drawLuckyNumberScreen() {
     scrollX = 128;
   }
 
-  display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
+  // Only draw big number if no image is present
+  if (!luckyImageValid || luckyImageBuffer == NULL) {
+      display.setTextColor(SSD1306_WHITE);
+      display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
 
-  // Number
-  display.setFont(&FreeMonoBold18pt7b);
-  String numStr = String(luckyNumber);
-  display.getTextBounds(numStr, 0, 40, &x1, &y1, &w, &h);
-  int x = (128 - w) / 2;
-  display.setCursor(x, 45);
-  display.print(numStr);
+      // Number
+      display.setFont(&FreeMonoBold18pt7b);
+      String numStr = String(luckyNumber);
+      display.getTextBounds(numStr, 0, 40, &x1, &y1, &w, &h);
+      int x = (128 - w) / 2;
+      display.setCursor(x, 45);
+      display.print(numStr);
+  }
   
   display.display();
 }
@@ -1758,11 +1760,24 @@ void startOTAUpdate(String targetETag) {
   display.display();
 
   // Free up memory to ensure stable update
-  for(int i=0; i<3; i++) forecasts[i].fullText = "";
-  currentGreeting = "";
-  weatherCond = "";
-  weatherTemp = "";
-  weatherHum = "";
+  if (luckyImageBuffer) {
+    free(luckyImageBuffer);
+    luckyImageBuffer = NULL;
+  }
+  for(int i=0; i<3; i++) forecasts[i].fullText = String();
+  currentGreeting = String();
+  weatherCond = String();
+  weatherTemp = String();
+  weatherHum = String();
+  weatherWind = String();
+  weatherPress = String();
+  weatherResponseBuffer = String();
+  lastForecastError = String();
+  
+  // Clear config strings not needed for update
+  city = String();
+  greetingUrl = String();
+  luckyImageUrl = String();
 
   // Đảm bảo các client khác đã dừng để giải phóng bộ nhớ đệm SSL
   weatherClient.stop();
