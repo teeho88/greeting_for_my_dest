@@ -65,7 +65,7 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.31";
+const String firmwareVersion = "v1.1.33";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -424,7 +424,16 @@ void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     if (now - lastWifiReconnectAttempt > 60000UL) {
       lastWifiReconnectAttempt = now;
+      if (displayInitialized) {
+        display.clearDisplay();
+        display.setFont(NULL);
+        display.setCursor(0, 0);
+        display.println(F("Lost WiFi!"));
+        display.println(F("Reconnecting..."));
+        display.display();
+      }
       WiFi.reconnect();
+      delay(2000);
     }
   }
 
@@ -1821,6 +1830,7 @@ void startOTAUpdate(String targetETag) {
   weatherClient.stop();
   forecastClient.stop();
   WiFiClient::stopAll(); // Force stop all clients
+  delay(1000); // Allow TCP stack to clean up
 
   if (WiFi.status() != WL_CONNECTED) {
     display.println(F("Connecting WiFi..."));
@@ -1856,42 +1866,48 @@ void startOTAUpdate(String targetETag) {
      return;
   }
 
-  // Use pointer for client to save stack space and avoid overflow during SSL handshake
-  WiFiClientSecure *client = new WiFiClientSecure;
-  if (!client) {
-    display.println(F("Client Heap Fail"));
-    display.display();
-    delay(2000);
-    ESP.restart();
-    return;
-  }
-  client->setInsecure();
-  // Reduce to 12KB to prevent OOM (HTTP -1) while keeping stability
-  client->setBufferSizes(12288, 512); 
-  client->setTimeout(20000);
-  
+  WiFiClientSecure *client = nullptr;
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
   String url = firmwareUrl;
   if (url.indexOf('?') == -1) url += "?t=" + String(millis());
   else url += "&t=" + String(millis());
-
-  display.println(F("Connecting..."));
-  display.display();
-
-  ESP.wdtFeed(); // Feed watchdog before heavy SSL handshake
-
-  if (!http.begin(*client, url)) {
-    display.println(F("Connect Fail"));
-    display.display();
-    delay(5000);
-    delete client;
-    ESP.restart();
-    return;
+  
+  int httpCode = -1;
+  // Retry loop: Try up to 3 times with different buffer configs
+  for (int attempt = 0; attempt < 3; attempt++) {
+      display.println(F("Connecting..."));
+      display.display();
+      
+      if (client) delete client;
+      client = new WiFiClientSecure;
+      if (!client) {
+          display.println(F("OOM!"));
+          display.display();
+          delay(1000);
+          ESP.restart();
+          return;
+      }
+      client->setInsecure();
+      // Attempt 0: 16KB (Standard), Attempt 1: 12KB (Low RAM), Attempt 2: 16KB
+      if (attempt == 1) client->setBufferSizes(12288, 512);
+      else client->setBufferSizes(16384, 512);
+      
+      client->setTimeout(15000);
+      ESP.wdtFeed();
+      
+      if (http.begin(*client, url)) {
+          httpCode = http.GET();
+          if (httpCode == HTTP_CODE_OK) break; // Success
+          http.end();
+      }
+      
+      display.print(F("Retry ")); display.println(attempt + 1);
+      display.display();
+      delay(1000);
   }
 
-  int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
     display.print(F("HTTP Err: ")); display.println(httpCode);
     display.display();
