@@ -65,7 +65,7 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.26";
+const String firmwareVersion = "v1.1.27";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -1734,18 +1734,8 @@ void checkForFirmwareUpdate() {
     if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_PARTIAL_CONTENT) {
        String newETag = http.header("ETag");
        if (newETag != "") {
-         if (currentFirmwareETag == "") {
-           // First run, store the ETag to RAM and EEPROM to establish baseline
-           currentFirmwareETag = newETag;
-           int len = currentFirmwareETag.length();
-           if (len > 90) len = 90;
-           EEPROM.write(ADDR_ETAG, len);
-           for (int i = 0; i < len; ++i) {
-             EEPROM.write(ADDR_ETAG + 1 + i, currentFirmwareETag[i]);
-           }
-           EEPROM.commit();
-         } else if (currentFirmwareETag != newETag) {
-           // ETag changed, trigger update!
+         // If local ETag is empty (first run) OR different from server, trigger update
+         if (currentFirmwareETag == "" || currentFirmwareETag != newETag) {
            startOTAUpdate(newETag); 
          }
        }
