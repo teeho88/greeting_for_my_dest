@@ -65,7 +65,7 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.29";
+const String firmwareVersion = "v1.1.30";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -1741,6 +1741,8 @@ void checkForFirmwareUpdate() {
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.setUserAgent("ESP8266-Weather-Clock");
   
+  String foundETag = "";
+
   // Use standard GET (no Range) to ensure headers are received correctly
   if (http.begin(*client, url)) {
     const char * headerKeys[] = {"ETag"};
@@ -1762,7 +1764,7 @@ void checkForFirmwareUpdate() {
            display.println(F("Update Found!"));
            display.display();
            delay(1000);
-           startOTAUpdate(newETag); 
+           foundETag = newETag;
          } else {
            delay(2000); // Show "No Update" state briefly
          }
@@ -1775,6 +1777,10 @@ void checkForFirmwareUpdate() {
     http.end();
   }
   delete client;
+
+  if (foundETag != "") {
+    startOTAUpdate(foundETag);
+  }
 }
 
 void startOTAUpdate(String targetETag) {
