@@ -64,7 +64,7 @@ const int ADDR_ETAG = 610;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.17";
+const String firmwareVersion = "v1.1.18";
 #define TIME_HEADER_MSG "Happy day!!! My Puppy!!!"
 
 // Display:
@@ -1700,11 +1700,18 @@ void startOTAUpdate(String targetETag) {
      return;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
-  // Giảm buffer xuống 12KB để tránh lỗi thiếu RAM (OOM), vẫn đủ ổn định cho GitHub
-  client.setBufferSizes(12288, 512);
-  client.setTimeout(20000);
+  // Use pointer for client to save stack space and avoid overflow during SSL handshake
+  WiFiClientSecure *client = new WiFiClientSecure;
+  if (!client) {
+    display.println(F("Client Heap Fail"));
+    display.display();
+    delay(2000);
+    ESP.restart();
+    return;
+  }
+  client->setInsecure();
+  client->setBufferSizes(16384, 512); // Revert to 16KB for stability
+  client->setTimeout(20000);
   
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -1716,10 +1723,13 @@ void startOTAUpdate(String targetETag) {
   display.println(F("Connecting..."));
   display.display();
 
-  if (!http.begin(client, url)) {
+  ESP.wdtFeed(); // Feed watchdog before heavy SSL handshake
+
+  if (!http.begin(*client, url)) {
     display.println(F("Connect Fail"));
     display.display();
     delay(5000);
+    delete client;
     ESP.restart();
     return;
   }
@@ -1729,6 +1739,7 @@ void startOTAUpdate(String targetETag) {
     display.print(F("HTTP Err: ")); display.println(httpCode);
     display.display();
     delay(5000);
+    delete client;
     ESP.restart();
     return;
   }
@@ -1799,6 +1810,7 @@ void startOTAUpdate(String targetETag) {
   }
 
   http.end();
+  delete client;
 
   if (Update.end(true)) {
       if (targetETag != "") {
