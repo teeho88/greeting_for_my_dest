@@ -1251,7 +1251,7 @@ void drawGreetingScreen() {
   // Title
   display.setFont(NULL);
   display.setCursor(0, 0);
-  display.println(F("Greeting"));
+  display.println(F("Love notes for you"));
   display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
 
   // Content
