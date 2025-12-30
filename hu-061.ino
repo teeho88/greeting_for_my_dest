@@ -65,8 +65,8 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.36";
-#define TIME_HEADER_MSG "I'm sorry my Puppy!!! Love you so much <3"
+const String firmwareVersion = "v1.1.37";
+#define TIME_HEADER_MSG "Happy new year! <3"
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -870,13 +870,13 @@ void drawSleepConfirmScreen() {
 }
 
 void drawDynamicBackground() {
-  // Draw Heart Bubbles Background
+  // Draw Flower Background (flying up)
   if (!heartsInitialized) {
     for (int i = 0; i < NUM_HEARTS; i++) {
       hearts[i].x = random(0, 128);
       hearts[i].y = random(0, 64);
       hearts[i].speed = random(2, 15) / 10.0;
-      hearts[i].size = random(1, 6);
+      hearts[i].size = random(1, 5);
     }
     heartsInitialized = true;
   }
@@ -887,56 +887,41 @@ void drawDynamicBackground() {
     uint8_t s = hearts[i].size;
 
     if (s == 1) {
-      // 5x5
-      display.drawPixel(x + 1, y, SSD1306_WHITE); display.drawPixel(x + 3, y, SSD1306_WHITE);
-      display.drawLine(x, y + 1, x + 4, y + 1, SSD1306_WHITE);
-      display.drawLine(x, y + 2, x + 4, y + 2, SSD1306_WHITE);
-      display.drawLine(x + 1, y + 3, x + 3, y + 3, SSD1306_WHITE);
-      display.drawPixel(x + 2, y + 4, SSD1306_WHITE);
+      // Tiny flower (3x3)
+      display.drawPixel(x + 1, y + 1, SSD1306_WHITE); // Center
+      display.drawPixel(x + 1, y, SSD1306_WHITE);     // Top
+      display.drawPixel(x + 1, y + 2, SSD1306_WHITE); // Bottom
+      display.drawPixel(x, y + 1, SSD1306_WHITE);     // Left
+      display.drawPixel(x + 2, y + 1, SSD1306_WHITE); // Right
     } else if (s == 2) {
-      // 7x6
-      display.drawLine(x + 1, y, x + 2, y, SSD1306_WHITE); display.drawLine(x + 4, y, x + 5, y, SSD1306_WHITE);
-      display.drawLine(x, y + 1, x + 6, y + 1, SSD1306_WHITE);
-      display.drawLine(x, y + 2, x + 6, y + 2, SSD1306_WHITE);
-      display.drawLine(x + 1, y + 3, x + 5, y + 3, SSD1306_WHITE);
-      display.drawLine(x + 2, y + 4, x + 4, y + 4, SSD1306_WHITE);
-      display.drawPixel(x + 3, y + 5, SSD1306_WHITE);
+      // Small flower (5x5)
+      display.drawPixel(x + 2, y + 2, SSD1306_WHITE); // Center
+      display.drawPixel(x, y, SSD1306_WHITE);
+      display.drawPixel(x + 4, y, SSD1306_WHITE);
+      display.drawPixel(x, y + 4, SSD1306_WHITE);
+      display.drawPixel(x + 4, y + 4, SSD1306_WHITE);
     } else if (s == 3) {
-      // 9x8
-      display.drawLine(x + 1, y, x + 3, y, SSD1306_WHITE); display.drawLine(x + 5, y, x + 7, y, SSD1306_WHITE);
-      display.fillRect(x, y + 1, 9, 3, SSD1306_WHITE);
-      display.drawLine(x + 1, y + 4, x + 7, y + 4, SSD1306_WHITE);
-      display.drawLine(x + 2, y + 5, x + 6, y + 5, SSD1306_WHITE);
-      display.drawLine(x + 3, y + 6, x + 5, y + 6, SSD1306_WHITE);
-      display.drawPixel(x + 4, y + 7, SSD1306_WHITE);
-    } else if (s == 4) {
-      // 11x9
-      display.drawLine(x + 1, y, x + 4, y, SSD1306_WHITE); display.drawLine(x + 6, y, x + 9, y, SSD1306_WHITE);
-      display.fillRect(x, y + 1, 11, 4, SSD1306_WHITE);
-      display.drawLine(x + 1, y + 5, x + 9, y + 5, SSD1306_WHITE);
-      display.drawLine(x + 2, y + 6, x + 8, y + 6, SSD1306_WHITE);
-      display.drawLine(x + 3, y + 7, x + 7, y + 7, SSD1306_WHITE);
-      display.drawLine(x + 4, y + 8, x + 6, y + 8, SSD1306_WHITE);
-      display.drawPixel(x + 5, y + 9, SSD1306_WHITE);
+      // Medium flower
+      display.fillCircle(x + 2, y + 2, 1, SSD1306_WHITE); // Center
+      display.drawPixel(x + 2, y, SSD1306_WHITE); // Top
+      display.drawPixel(x + 2, y + 4, SSD1306_WHITE); // Bottom
+      display.drawPixel(x, y + 2, SSD1306_WHITE); // Left
+      display.drawPixel(x + 4, y + 2, SSD1306_WHITE); // Right
     } else {
-      // 13x11
-      display.drawLine(x + 2, y, x + 5, y, SSD1306_WHITE); display.drawLine(x + 7, y, x + 10, y, SSD1306_WHITE);
-      display.drawLine(x + 1, y + 1, x + 11, y + 1, SSD1306_WHITE);
-      display.fillRect(x, y + 2, 13, 4, SSD1306_WHITE);
-      display.drawLine(x + 1, y + 6, x + 11, y + 6, SSD1306_WHITE);
-      display.drawLine(x + 2, y + 7, x + 10, y + 7, SSD1306_WHITE);
-      display.drawLine(x + 3, y + 8, x + 9, y + 8, SSD1306_WHITE);
-      display.drawLine(x + 4, y + 9, x + 8, y + 9, SSD1306_WHITE);
-      display.drawLine(x + 5, y + 10, x + 7, y + 10, SSD1306_WHITE);
-      display.drawPixel(x + 6, y + 11, SSD1306_WHITE);
+      // Large flower
+      display.drawPixel(x + 3, y + 3, SSD1306_WHITE); // Center
+      display.drawCircle(x + 3, y + 1, 1, SSD1306_WHITE); // Top petal
+      display.drawCircle(x + 3, y + 5, 1, SSD1306_WHITE); // Bottom petal
+      display.drawCircle(x + 1, y + 3, 1, SSD1306_WHITE); // Left petal
+      display.drawCircle(x + 5, y + 3, 1, SSD1306_WHITE); // Right petal
     }
 
     hearts[i].y -= hearts[i].speed;
-    if (hearts[i].y < -12) {
-      hearts[i].y = 64;
+    if (hearts[i].y < -10) {
+      hearts[i].y = 64 + random(0, 20);
       hearts[i].x = random(0, 128);
       hearts[i].speed = random(2, 15) / 10.0;
-      hearts[i].size = random(1, 6);
+      hearts[i].size = random(1, 5);
     }
   }
 }
