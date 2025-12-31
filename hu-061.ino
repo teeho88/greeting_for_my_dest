@@ -65,8 +65,8 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.37";
-#define TIME_HEADER_MSG "Happy new year! <3"
+const String firmwareVersion = "v1.1.40";
+#define TIME_HEADER_MSG "Happy new year! <3 This year will be better than ever for all of us!"
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -132,6 +132,7 @@ struct Heart {
   float y;
   float speed;
   uint8_t size;
+  uint8_t angle;
 };
 Heart hearts[NUM_HEARTS];
 bool heartsInitialized = false;
@@ -877,6 +878,7 @@ void drawDynamicBackground() {
       hearts[i].y = random(0, 64);
       hearts[i].speed = random(2, 15) / 10.0;
       hearts[i].size = random(1, 5);
+      hearts[i].angle = random(0, 4); // 4 random angles
     }
     heartsInitialized = true;
   }
@@ -885,35 +887,65 @@ void drawDynamicBackground() {
     int x = (int)hearts[i].x;
     int y = (int)hearts[i].y;
     uint8_t s = hearts[i].size;
+    uint8_t a = hearts[i].angle;
 
     if (s == 1) {
-      // Tiny flower (3x3)
-      display.drawPixel(x + 1, y + 1, SSD1306_WHITE); // Center
-      display.drawPixel(x + 1, y, SSD1306_WHITE);     // Top
-      display.drawPixel(x + 1, y + 2, SSD1306_WHITE); // Bottom
-      display.drawPixel(x, y + 1, SSD1306_WHITE);     // Left
-      display.drawPixel(x + 2, y + 1, SSD1306_WHITE); // Right
+      // Size 1: 3x3 - 4 variations of tilted cross
+      if (a == 0) {
+        display.drawPixel(x+1, y, SSD1306_WHITE); display.drawPixel(x+1, y+1, SSD1306_WHITE); display.drawPixel(x, y+2, SSD1306_WHITE);
+        display.drawPixel(x+2, y+1, SSD1306_WHITE);
+      } else if (a == 1) {
+        display.drawPixel(x, y, SSD1306_WHITE); display.drawPixel(x+1, y+1, SSD1306_WHITE); display.drawPixel(x+1, y+2, SSD1306_WHITE);
+        display.drawPixel(x+2, y+1, SSD1306_WHITE);
+      } else if (a == 2) {
+        display.drawPixel(x+1, y, SSD1306_WHITE); display.drawPixel(x+1, y+1, SSD1306_WHITE); display.drawPixel(x+2, y+2, SSD1306_WHITE);
+        display.drawPixel(x, y+1, SSD1306_WHITE);
+      } else {
+        display.drawPixel(x, y+1, SSD1306_WHITE); display.drawPixel(x+1, y+1, SSD1306_WHITE); display.drawPixel(x+2, y, SSD1306_WHITE);
+        display.drawPixel(x+1, y+2, SSD1306_WHITE);
+      }
     } else if (s == 2) {
-      // Small flower (5x5)
+      // Size 2: 5x5 - 2 distinct angles (approx 26 and 63 deg)
       display.drawPixel(x + 2, y + 2, SSD1306_WHITE); // Center
-      display.drawPixel(x, y, SSD1306_WHITE);
-      display.drawPixel(x + 4, y, SSD1306_WHITE);
-      display.drawPixel(x, y + 4, SSD1306_WHITE);
-      display.drawPixel(x + 4, y + 4, SSD1306_WHITE);
+      if (a % 2 == 0) { // ~26 deg
+        display.drawPixel(x+4, y+1, SSD1306_WHITE); display.drawPixel(x+3, y+4, SSD1306_WHITE);
+        display.drawPixel(x+0, y+3, SSD1306_WHITE); display.drawPixel(x+1, y+0, SSD1306_WHITE);
+      } else { // ~63 deg
+        display.drawPixel(x+3, y+0, SSD1306_WHITE); display.drawPixel(x+4, y+3, SSD1306_WHITE);
+        display.drawPixel(x+1, y+4, SSD1306_WHITE); display.drawPixel(x+0, y+1, SSD1306_WHITE);
+      }
     } else if (s == 3) {
-      // Medium flower
-      display.fillCircle(x + 2, y + 2, 1, SSD1306_WHITE); // Center
-      display.drawPixel(x + 2, y, SSD1306_WHITE); // Top
-      display.drawPixel(x + 2, y + 4, SSD1306_WHITE); // Bottom
-      display.drawPixel(x, y + 2, SSD1306_WHITE); // Left
-      display.drawPixel(x + 4, y + 2, SSD1306_WHITE); // Right
-    } else {
-      // Large flower
+      // Size 3: 7x7 - 4 distinct angles
       display.drawPixel(x + 3, y + 3, SSD1306_WHITE); // Center
-      display.drawCircle(x + 3, y + 1, 1, SSD1306_WHITE); // Top petal
-      display.drawCircle(x + 3, y + 5, 1, SSD1306_WHITE); // Bottom petal
-      display.drawCircle(x + 1, y + 3, 1, SSD1306_WHITE); // Left petal
-      display.drawCircle(x + 5, y + 3, 1, SSD1306_WHITE); // Right petal
+      if (a == 0) { // ~18 deg
+         display.drawPixel(x+6, y+2, SSD1306_WHITE); display.drawPixel(x+4, y+6, SSD1306_WHITE);
+         display.drawPixel(x+0, y+4, SSD1306_WHITE); display.drawPixel(x+2, y+0, SSD1306_WHITE);
+      } else if (a == 1) { // ~33 deg
+         display.drawPixel(x+6, y+1, SSD1306_WHITE); display.drawPixel(x+5, y+6, SSD1306_WHITE);
+         display.drawPixel(x+0, y+5, SSD1306_WHITE); display.drawPixel(x+1, y+0, SSD1306_WHITE);
+      } else if (a == 2) { // ~56 deg
+         display.drawPixel(x+5, y+0, SSD1306_WHITE); display.drawPixel(x+6, y+5, SSD1306_WHITE);
+         display.drawPixel(x+1, y+6, SSD1306_WHITE); display.drawPixel(x+0, y+1, SSD1306_WHITE);
+      } else { // ~71 deg
+         display.drawPixel(x+4, y+0, SSD1306_WHITE); display.drawPixel(x+6, y+4, SSD1306_WHITE);
+         display.drawPixel(x+2, y+6, SSD1306_WHITE); display.drawPixel(x+0, y+2, SSD1306_WHITE);
+      }
+    } else {
+      // Size 4: 9x9 - 4 distinct angles
+      display.fillCircle(x + 4, y + 4, 1, SSD1306_WHITE); // Center
+      if (a == 0) { // ~14 deg
+         display.drawCircle(x+8, y+3, 1, SSD1306_WHITE); display.drawCircle(x+5, y+8, 1, SSD1306_WHITE);
+         display.drawCircle(x+0, y+5, 1, SSD1306_WHITE); display.drawCircle(x+3, y+0, 1, SSD1306_WHITE);
+      } else if (a == 1) { // ~26 deg
+         display.drawCircle(x+8, y+2, 1, SSD1306_WHITE); display.drawCircle(x+6, y+8, 1, SSD1306_WHITE);
+         display.drawCircle(x+0, y+6, 1, SSD1306_WHITE); display.drawCircle(x+2, y+0, 1, SSD1306_WHITE);
+      } else if (a == 2) { // ~63 deg
+         display.drawCircle(x+6, y+0, 1, SSD1306_WHITE); display.drawCircle(x+8, y+6, 1, SSD1306_WHITE);
+         display.drawCircle(x+2, y+8, 1, SSD1306_WHITE); display.drawCircle(x+0, y+2, 1, SSD1306_WHITE);
+      } else { // ~76 deg
+         display.drawCircle(x+5, y+0, 1, SSD1306_WHITE); display.drawCircle(x+8, y+5, 1, SSD1306_WHITE);
+         display.drawCircle(x+3, y+8, 1, SSD1306_WHITE); display.drawCircle(x+0, y+3, 1, SSD1306_WHITE);
+      }
     }
 
     hearts[i].y -= hearts[i].speed;
@@ -922,6 +954,7 @@ void drawDynamicBackground() {
       hearts[i].x = random(0, 128);
       hearts[i].speed = random(2, 15) / 10.0;
       hearts[i].size = random(1, 5);
+      hearts[i].angle = random(0, 4);
     }
   }
 }
