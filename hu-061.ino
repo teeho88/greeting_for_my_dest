@@ -66,7 +66,7 @@ ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
 const String firmwareVersion = "v1.1.40";
-#define TIME_HEADER_MSG "Happy new year! <3 This year will be better than ever for all of us!"
+#define TIME_HEADER_MSG "A wonderful day with LOVE <3"
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
