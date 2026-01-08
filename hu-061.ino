@@ -65,8 +65,8 @@ const int ADDR_LUCKY_URL = 710;
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.40";
-#define TIME_HEADER_MSG "A wonderful day with LOVE <3"
+const String firmwareVersion = "v1.1.41";
+String timeHeaderMsg = "A wonderful day with LOVE <3";
 
 // Display:
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -1006,7 +1006,7 @@ void drawTimeScreen() {
   int16_t x1, y1;
   uint16_t w, h;
   
-  String headerText = dayName + " - " + String(TIME_HEADER_MSG);
+  String headerText = dayName + " - " + timeHeaderMsg;
   display.getTextBounds(headerText, 0, 0, &x1, &y1, &w, &h);
   
   display.setCursor(scrollX, 0);
@@ -1657,7 +1657,11 @@ void updateGreeting() {
           String line = stream->readStringUntil('\n');
           line.trim();
           if (line.length() > 0) {
-            if (currentIndex == greetingIndex) {
+            if (currentIndex == 0) {
+               timeHeaderMsg = line;
+            }
+            
+            if (currentIndex == greetingIndex + 1) {
               currentGreeting = line;
               found = true;
               break;
