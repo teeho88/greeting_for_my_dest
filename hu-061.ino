@@ -125,17 +125,17 @@ unsigned long lastOTACheck = 0;
 String currentFirmwareETag = "";
 String pendingOTA_ETag = "";
 
-// Snow effect data
-const int NUM_HEARTS = 10;
-struct Heart {
+// Tet effect data (Coins and Red Envelopes)
+const int NUM_ITEMS = 12;
+struct EffectItem {
   float x;
   float y;
   float speed;
   uint8_t size;
-  uint8_t angle;
+  uint8_t type; // 0 for Coin, 1 for Red Envelope
 };
-Heart hearts[NUM_HEARTS];
-bool heartsInitialized = false;
+EffectItem items[NUM_ITEMS];
+bool itemsInitialized = false;
 
 // Weather Task Variables
 enum WeatherTaskState {
@@ -450,8 +450,8 @@ void loop() {
     lastLuckyDay = ptm->tm_mday;
   }
 
-  // Update greeting every 5 minutes
-  if (now - lastGreetingUpdate > 300000UL) {
+  // Update greeting every 10 minutes
+  if (now - lastGreetingUpdate > 600000UL) {
     updateGreeting();
     lastGreetingUpdate = now;
   }
@@ -871,90 +871,40 @@ void drawSleepConfirmScreen() {
 }
 
 void drawDynamicBackground() {
-  // Draw Flower Background (flying up)
-  if (!heartsInitialized) {
-    for (int i = 0; i < NUM_HEARTS; i++) {
-      hearts[i].x = random(0, 128);
-      hearts[i].y = random(0, 64);
-      hearts[i].speed = random(2, 15) / 10.0;
-      hearts[i].size = random(1, 5);
-      hearts[i].angle = random(0, 4); // 4 random angles
+  // Draw Tet Background (Coins and Red Envelopes flying up)
+  if (!itemsInitialized) {
+    for (int i = 0; i < NUM_ITEMS; i++) {
+      items[i].x = random(0, 128);
+      items[i].y = random(0, 64);
+      items[i].speed = random(4, 12) / 10.0;
+      items[i].size = random(2, 5);
+      items[i].type = random(0, 2); // 0: Coin, 1: Red Envelope
     }
-    heartsInitialized = true;
+    itemsInitialized = true;
   }
 
-  for (int i = 0; i < NUM_HEARTS; i++) {
-    int x = (int)hearts[i].x;
-    int y = (int)hearts[i].y;
-    uint8_t s = hearts[i].size;
-    uint8_t a = hearts[i].angle;
+  for (int i = 0; i < NUM_ITEMS; i++) {
+    int x = (int)items[i].x;
+    int y = (int)items[i].y;
+    uint8_t s = items[i].size;
 
-    if (s == 1) {
-      // Size 1: 3x3 - 4 variations of tilted cross
-      if (a == 0) {
-        display.drawPixel(x+1, y, SSD1306_WHITE); display.drawPixel(x+1, y+1, SSD1306_WHITE); display.drawPixel(x, y+2, SSD1306_WHITE);
-        display.drawPixel(x+2, y+1, SSD1306_WHITE);
-      } else if (a == 1) {
-        display.drawPixel(x, y, SSD1306_WHITE); display.drawPixel(x+1, y+1, SSD1306_WHITE); display.drawPixel(x+1, y+2, SSD1306_WHITE);
-        display.drawPixel(x+2, y+1, SSD1306_WHITE);
-      } else if (a == 2) {
-        display.drawPixel(x+1, y, SSD1306_WHITE); display.drawPixel(x+1, y+1, SSD1306_WHITE); display.drawPixel(x+2, y+2, SSD1306_WHITE);
-        display.drawPixel(x, y+1, SSD1306_WHITE);
-      } else {
-        display.drawPixel(x, y+1, SSD1306_WHITE); display.drawPixel(x+1, y+1, SSD1306_WHITE); display.drawPixel(x+2, y, SSD1306_WHITE);
-        display.drawPixel(x+1, y+2, SSD1306_WHITE);
-      }
-    } else if (s == 2) {
-      // Size 2: 5x5 - 2 distinct angles (approx 26 and 63 deg)
-      display.drawPixel(x + 2, y + 2, SSD1306_WHITE); // Center
-      if (a % 2 == 0) { // ~26 deg
-        display.drawPixel(x+4, y+1, SSD1306_WHITE); display.drawPixel(x+3, y+4, SSD1306_WHITE);
-        display.drawPixel(x+0, y+3, SSD1306_WHITE); display.drawPixel(x+1, y+0, SSD1306_WHITE);
-      } else { // ~63 deg
-        display.drawPixel(x+3, y+0, SSD1306_WHITE); display.drawPixel(x+4, y+3, SSD1306_WHITE);
-        display.drawPixel(x+1, y+4, SSD1306_WHITE); display.drawPixel(x+0, y+1, SSD1306_WHITE);
-      }
-    } else if (s == 3) {
-      // Size 3: 7x7 - 4 distinct angles
-      display.drawPixel(x + 3, y + 3, SSD1306_WHITE); // Center
-      if (a == 0) { // ~18 deg
-         display.drawPixel(x+6, y+2, SSD1306_WHITE); display.drawPixel(x+4, y+6, SSD1306_WHITE);
-         display.drawPixel(x+0, y+4, SSD1306_WHITE); display.drawPixel(x+2, y+0, SSD1306_WHITE);
-      } else if (a == 1) { // ~33 deg
-         display.drawPixel(x+6, y+1, SSD1306_WHITE); display.drawPixel(x+5, y+6, SSD1306_WHITE);
-         display.drawPixel(x+0, y+5, SSD1306_WHITE); display.drawPixel(x+1, y+0, SSD1306_WHITE);
-      } else if (a == 2) { // ~56 deg
-         display.drawPixel(x+5, y+0, SSD1306_WHITE); display.drawPixel(x+6, y+5, SSD1306_WHITE);
-         display.drawPixel(x+1, y+6, SSD1306_WHITE); display.drawPixel(x+0, y+1, SSD1306_WHITE);
-      } else { // ~71 deg
-         display.drawPixel(x+4, y+0, SSD1306_WHITE); display.drawPixel(x+6, y+4, SSD1306_WHITE);
-         display.drawPixel(x+2, y+6, SSD1306_WHITE); display.drawPixel(x+0, y+2, SSD1306_WHITE);
-      }
+    if (items[i].type == 0) {
+      // Draw Coin (Đồng xu) - Circle with a square hole
+      display.drawCircle(x, y, s, SSD1306_WHITE);
+      display.drawRect(x - 1, y - 1, 3, 3, SSD1306_WHITE);
     } else {
-      // Size 4: 9x9 - 4 distinct angles
-      display.fillCircle(x + 4, y + 4, 1, SSD1306_WHITE); // Center
-      if (a == 0) { // ~14 deg
-         display.drawCircle(x+8, y+3, 1, SSD1306_WHITE); display.drawCircle(x+5, y+8, 1, SSD1306_WHITE);
-         display.drawCircle(x+0, y+5, 1, SSD1306_WHITE); display.drawCircle(x+3, y+0, 1, SSD1306_WHITE);
-      } else if (a == 1) { // ~26 deg
-         display.drawCircle(x+8, y+2, 1, SSD1306_WHITE); display.drawCircle(x+6, y+8, 1, SSD1306_WHITE);
-         display.drawCircle(x+0, y+6, 1, SSD1306_WHITE); display.drawCircle(x+2, y+0, 1, SSD1306_WHITE);
-      } else if (a == 2) { // ~63 deg
-         display.drawCircle(x+6, y+0, 1, SSD1306_WHITE); display.drawCircle(x+8, y+6, 1, SSD1306_WHITE);
-         display.drawCircle(x+2, y+8, 1, SSD1306_WHITE); display.drawCircle(x+0, y+2, 1, SSD1306_WHITE);
-      } else { // ~76 deg
-         display.drawCircle(x+5, y+0, 1, SSD1306_WHITE); display.drawCircle(x+8, y+5, 1, SSD1306_WHITE);
-         display.drawCircle(x+3, y+8, 1, SSD1306_WHITE); display.drawCircle(x+0, y+3, 1, SSD1306_WHITE);
-      }
+      // Draw Red Envelope (Lì xì) - Small rectangle
+      display.drawRect(x, y, s + 1, s + 4, SSD1306_WHITE);
+      display.drawLine(x, y + 1, x + s + 1, y + 1, SSD1306_WHITE); // Flap line
     }
 
-    hearts[i].y -= hearts[i].speed;
-    if (hearts[i].y < -10) {
-      hearts[i].y = 64 + random(0, 20);
-      hearts[i].x = random(0, 128);
-      hearts[i].speed = random(2, 15) / 10.0;
-      hearts[i].size = random(1, 5);
-      hearts[i].angle = random(0, 4);
+    items[i].y -= items[i].speed;
+    if (items[i].y < -10) {
+      items[i].y = 64 + random(0, 20);
+      items[i].x = random(0, 128);
+      items[i].speed = random(4, 12) / 10.0;
+      items[i].size = random(2, 5);
+      items[i].type = random(0, 2);
     }
   }
 }
