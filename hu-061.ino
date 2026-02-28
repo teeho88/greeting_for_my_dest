@@ -13,7 +13,7 @@
  *
  * Normal Operation:
  * Connects to configured Wi-Fi and retrieves time via NTP (synchronized every 60s).
- * Retrieves weather from wttr.in for the specified city (HTTPS GET request).
+ * Retrieves weather from Open-Meteo (api.open-meteo.com) using lat/lon coordinates (HTTP GET request).
  * Displays time and weather data on the OLED, switching screens every 15 seconds.
  *
  * Hardware:
@@ -60,12 +60,14 @@ const int ADDR_FIRMWARE_URL = 430;
 const int ADDR_SIGNATURE = 600;  // 4-byte signature "CFG1" to indicate valid config
 const int ADDR_ETAG = 610;
 const int ADDR_LUCKY_URL = 710;
+const int ADDR_LAT = 912;  // 17 bytes: 1 length + up to 16 chars for latitude string
+const int ADDR_LON = 930;  // 17 bytes: 1 length + up to 16 chars for longitude string
 
 // Wi-Fi and server:
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.41";
+const String firmwareVersion = "v1.1.43";
 String timeHeaderMsg = "A wonderful day with LOVE <3";
 
 // Display:
@@ -89,6 +91,8 @@ String city = "";
 String greetingUrl = "";
 String firmwareUrl = "";
 String luckyImageUrl = "";
+String weatherLat = "";  // Latitude for Open-Meteo API
+String weatherLon = "";  // Longitude for Open-Meteo API
 int timezoneOffset = 0;  // in seconds
 
 // Weather data variables:
@@ -145,7 +149,7 @@ enum WeatherTaskState {
   W_READ_BODY
 };
 WeatherTaskState weatherTaskState = W_IDLE;
-WiFiClientSecure weatherClient;
+WiFiClient weatherClient;  // Open-Meteo uses plain HTTP (port 80)
 unsigned long weatherTaskTimer = 0;
 String weatherResponseBuffer = "";
 
@@ -157,9 +161,10 @@ enum ForecastTaskState {
   F_READ_BODY
 };
 ForecastTaskState forecastTaskState = F_IDLE;
-WiFiClientSecure forecastClient;
+WiFiClient forecastClient;  // Open-Meteo uses plain HTTP (port 80)
 unsigned long forecastTaskTimer = 0;
 String lastForecastError = "Wait...";
+String forecastResponseBuffer = "";  // Accumulates forecast HTTP body
 
 // Function prototypes:
 void loadSettings();
@@ -176,7 +181,8 @@ void handleWeatherTask();
 void parseWeatherData(String result);
 String removeAccents(String str);
 void handleForecastTask();
-void parseForecastData(WiFiClientSecure& stream);
+void parseForecastData(String& buffer);
+String wmoCodeToText(int code);
 void updateGreeting();
 void updateLuckyImage();
 void drawDynamicBackground();
@@ -539,22 +545,35 @@ void startConfigPortal() {
     if (systemMode == 1) {
     // HTML page for config
     String page;
-    page.reserve(2048);
+    page.reserve(4096);
     page = F("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
     page += F("<title>ESP8266 Setup</title><style>");
-    page += F(".container{max-width:300px;margin:40px auto;padding:20px;background:#f7f7f7;border:1px solid #ccc;border-radius:5px;}");
+    page += F(".container{max-width:320px;margin:40px auto;padding:20px;background:#f7f7f7;border:1px solid #ccc;border-radius:5px;}");
     page += F("body{text-align:center;font-family:sans-serif;}h2{margin-bottom:15px;}label{display:block;text-align:left;margin-top:10px;}");
-    page += F("input, select{width:100%;padding:8px;margin-top:5px;border:1px solid #ccc;border-radius:3px;}");
+    page += F("input,select{width:100%;padding:8px;margin-top:5px;border:1px solid #ccc;border-radius:3px;box-sizing:border-box;}");
     page += F("input[type=submit]{margin-top:15px;background:#4caf50;color:white;border:none;cursor:pointer;border-radius:3px;font-size:16px;}");
     page += F("input[type=submit]:hover{background:#45a049;}");
+    page += F(".city-row{display:flex;gap:6px;align-items:flex-end;}");
+    page += F(".city-row input{flex:1;}");
+    page += F("#findBtn{flex-shrink:0;width:auto;padding:8px 10px;background:#2196F3;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:13px;margin-top:5px;}");
+    page += F("#findBtn:hover{background:#1976D2;}");
+    page += F("#geoStatus{font-size:12px;color:#555;text-align:left;margin-top:4px;min-height:16px;}");
     page += F("</style></head><body><div class='container'>");
     page += F("<h2>Device Configuration</h2><form method='POST' action='/'>");
     // WiFi SSID field
     page += F("<label>Wi-Fi SSID:</label><input type='text' name='ssid' value='") + wifiSSID + F("' required>");
     // Password field
     page += F("<label>Password:</label><input type='password' name='pass' value='") + wifiPass + F("' placeholder=''>");
-    // City field
-    page += F("<label>City:</label><input type='text' name='city' value='") + city + F("' required>");
+    // City field with geocoding button
+    page += F("<label>City (display name):</label>");
+    page += F("<div class='city-row'>");
+    page += F("<input type='text' id='cityInput' name='city' value='") + city + F("' required placeholder='e.g. Ho Chi Minh City'>");
+    page += F("<button type='button' id='findBtn' onclick='findCoords()'>&#128269; Find</button>");
+    page += F("</div>");
+    page += F("<div id='geoStatus'></div>");
+    // Lat/Lon fields
+    page += F("<label>Latitude:</label><input type='text' id='latInput' name='lat' value='") + weatherLat + F("' required placeholder='e.g. 10.8231'>");
+    page += F("<label>Longitude:</label><input type='text' id='lonInput' name='lon' value='") + weatherLon + F("' required placeholder='e.g. 106.6297'>");
     page += F("<label>Greeting URL (Gist Raw):</label><input type='text' name='greeting' value='") + greetingUrl + F("'>");
     page += F("<label>Firmware URL (.bin):</label><input type='text' name='firmware' value='") + firmwareUrl + F("'>");
     page += F("<label>Lucky Image URL (1KB Bin):</label><input type='text' name='lucky_img' value='") + luckyImageUrl + F("'>");
@@ -576,7 +595,30 @@ void startConfigPortal() {
     }
     page += F("</select>");
     // Submit button
-    page += F("<input type='submit' value='Save'></form></div></body></html>");
+    page += F("<input type='submit' value='Save'></form>");
+    // JavaScript: auto-geocode city name using Open-Meteo Geocoding API
+    page += F("<script>");
+    page += F("function findCoords(){");
+    page += F("var q=document.getElementById('cityInput').value.trim();");
+    page += F("if(!q){alert('Please enter a city name first.');return;}");
+    page += F("var st=document.getElementById('geoStatus');");
+    page += F("st.style.color='#555';st.textContent='Searching...';");
+    page += F("var url='https://geocoding-api.open-meteo.com/v1/search?name='+encodeURIComponent(q)+'&count=1&language=en&format=json';");
+    page += F("fetch(url).then(function(r){return r.json();})");
+    page += F(".then(function(d){");
+    page += F("if(d.results&&d.results.length>0){");
+    page += F("var r=d.results[0];");
+    page += F("document.getElementById('latInput').value=r.latitude.toFixed(4);");
+    page += F("document.getElementById('lonInput').value=r.longitude.toFixed(4);");
+    page += F("st.style.color='#2a2';st.textContent='Found: '+r.name+', '+(r.admin1||'')+(r.country?', '+r.country:'');");
+    page += F("}else{st.style.color='#c00';st.textContent='City not found. Try a different name.';}");
+    page += F("})");
+    page += F(".catch(function(){st.style.color='#c00';st.textContent='Network error. Check internet connection.';});");
+    page += F("}\n");
+    // Also auto-search when user presses Enter in city field
+    page += F("document.getElementById('cityInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();findCoords();}});");
+    page += F("</script>");
+    page += F("</div></body></html>");
     server.send(200, "text/html", page);
     } else if (systemMode == 2) {
       // HTML page for Update
@@ -640,15 +682,19 @@ void handleConfigForm() {
   String ssid = server.arg("ssid");
   String pass = server.arg("pass");
   String newCity = server.arg("city");
+  String newLat = server.arg("lat");
+  String newLon = server.arg("lon");
   String newGreeting = server.arg("greeting");
   String newFirmware = server.arg("firmware");
   String newLuckyImg = server.arg("lucky_img");
   String tzStr = server.arg("tz");
 
-  if (ssid.length() > 0 && newCity.length() > 0 && tzStr.length() > 0) {
+  if (ssid.length() > 0 && newCity.length() > 0 && newLat.length() > 0 && newLon.length() > 0 && tzStr.length() > 0) {
     wifiSSID = ssid;
     wifiPass = pass;
     city = newCity;
+    weatherLat = newLat;
+    weatherLon = newLon;
     greetingUrl = newGreeting;
     firmwareUrl = newFirmware;
     luckyImageUrl = newLuckyImg;
@@ -665,7 +711,7 @@ void handleConfigForm() {
     delay(1000);
     ESP.restart();
   } else {
-    server.send(400, "text/html", F("<html><body><h3>Invalid input, please fill all required fields.</h3></body></html>"));
+    server.send(400, "text/html", F("<html><body><h3>Invalid input, please fill all required fields (including Lat/Lon).</h3></body></html>"));
   }
 }
 
@@ -755,6 +801,30 @@ void loadSettings() {
   } else {
     luckyImageUrl = "";
   }
+  // Read Latitude
+  len = EEPROM.read(ADDR_LAT);
+  if (len > 0 && len < 0xFF && len < 17) {
+    char buf[17];
+    for (int i = 0; i < len; ++i) {
+      buf[i] = char(EEPROM.read(ADDR_LAT + 1 + i));
+    }
+    buf[len] = '\0';
+    weatherLat = String(buf);
+  } else {
+    weatherLat = "";
+  }
+  // Read Longitude
+  len = EEPROM.read(ADDR_LON);
+  if (len > 0 && len < 0xFF && len < 17) {
+    char buf[17];
+    for (int i = 0; i < len; ++i) {
+      buf[i] = char(EEPROM.read(ADDR_LON + 1 + i));
+    }
+    buf[len] = '\0';
+    weatherLon = String(buf);
+  } else {
+    weatherLon = "";
+  }
   // Read Timezone offset (int32)
   uint32_t b0 = EEPROM.read(ADDR_TZ);
   uint32_t b1 = EEPROM.read(ADDR_TZ + 1);
@@ -827,6 +897,28 @@ void saveSettings() {
     }
   } else {
     EEPROM.write(ADDR_LUCKY_URL, 0);
+  }
+  // Write Latitude
+  len = weatherLat.length();
+  if (len > 16) len = 16;
+  if (len > 0) {
+    EEPROM.write(ADDR_LAT, len);
+    for (int i = 0; i < len; ++i) {
+      EEPROM.write(ADDR_LAT + 1 + i, weatherLat[i]);
+    }
+  } else {
+    EEPROM.write(ADDR_LAT, 0);
+  }
+  // Write Longitude
+  len = weatherLon.length();
+  if (len > 16) len = 16;
+  if (len > 0) {
+    EEPROM.write(ADDR_LON, len);
+    for (int i = 0; i < len; ++i) {
+      EEPROM.write(ADDR_LON + 1 + i, weatherLon[i]);
+    }
+  } else {
+    EEPROM.write(ADDR_LON, 0);
   }
   // Write Timezone (int32)
   int tz = timezoneOffset;
@@ -1247,65 +1339,101 @@ void handleWeatherTask() {
       break;
 
     case W_CONNECTING:
-      if (WiFi.status() == WL_CONNECTED) {
-        weatherClient.setInsecure();
-        weatherClient.setBufferSizes(1024, 512);
-        // Note: connect is blocking on ESP8266
-        if (weatherClient.connect("wttr.in", 443)) {
-           String encodedCity = city;
-           encodedCity.replace(" ", "-"); //Use hyphens for spaces
-           weatherClient.print("GET /" + encodedCity + "?format=%t|%C|%h|%w|%P HTTP/1.0\r\n" +
-                               "Host: wttr.in\r\n" +
+      if (WiFi.status() == WL_CONNECTED && weatherLat.length() > 0 && weatherLon.length() > 0) {
+        // Open-Meteo: free, no API key, plain HTTP port 80
+        // 3000ms connect timeout prevents long blocking when server is unreachable
+        if (weatherClient.connect("api.open-meteo.com", 80, 3000)) {
+           String path = "/v1/forecast?latitude=" + weatherLat +
+                         "&longitude=" + weatherLon +
+                         "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,surface_pressure" +
+                         "&wind_speed_unit=ms&forecast_days=1";
+           weatherClient.print("GET " + path + " HTTP/1.0\r\n" +
+                               "Host: api.open-meteo.com\r\n" +
                                "User-Agent: ESP8266-Weather-Clock\r\n" +
                                "Connection: close\r\n\r\n");
            weatherTaskState = W_WAIT_HEADER;
            weatherTaskTimer = millis();
            weatherResponseBuffer = "";
-           weatherResponseBuffer.reserve(2048); // Reserve memory to reduce fragmentation
+           weatherResponseBuffer.reserve(1024);
         } else {
            weatherTaskState = W_IDLE;
            lastWeatherFetch = millis() - 840000UL; // Retry in 1 min
         }
+      } else if (weatherLat.length() == 0 || weatherLon.length() == 0) {
+        // No coordinates configured, skip
+        weatherTaskState = W_IDLE;
+        lastWeatherFetch = millis();
       }
       break;
 
     case W_WAIT_HEADER:
-      // Wait for data to arrive
-      if (weatherClient.available()) {
-        weatherTaskState = W_READ_BODY;
-        weatherTaskTimer = millis();
-      }
-      if (millis() - weatherTaskTimer > 10000) { // Timeout
-        weatherClient.stop();
-        weatherTaskState = W_IDLE;
+      // Non-blocking: read up to 5ms worth of data, looking for end of HTTP headers
+      {
+        unsigned long tStart = millis();
+        while (weatherClient.available() && millis() - tStart < 5) {
+          char c = (char)weatherClient.read();
+          weatherResponseBuffer += c;
+          // Detect \r\n\r\n (end of headers)
+          if (weatherResponseBuffer.endsWith("\r\n\r\n")) {
+            weatherResponseBuffer = ""; // discard headers, start collecting body
+            weatherTaskState = W_READ_BODY;
+            weatherTaskTimer = millis();
+            break;
+          }
+          // Cap header buffer to avoid runaway growth
+          if (weatherResponseBuffer.length() > 1024) {
+            weatherResponseBuffer = weatherResponseBuffer.substring(weatherResponseBuffer.length() - 4);
+          }
+        }
+        if (millis() - weatherTaskTimer > 10000) { // Timeout
+          weatherClient.stop();
+          weatherResponseBuffer = "";
+          weatherTaskState = W_IDLE;
+        }
       }
       break;
 
     case W_READ_BODY:
-      unsigned long startLoop = millis();
-      while (weatherClient.available()) {
-        char c = (char)weatherClient.read();
-        weatherResponseBuffer += c;
-        if (millis() - startLoop > 5) break; // Limit blocking time per loop
-      }
-
-      if (!weatherClient.connected() && !weatherClient.available()) {
-        parseWeatherData(weatherResponseBuffer);
-        weatherClient.stop();
-        weatherValid = true;
-        lastWeatherFetch = millis();
-        weatherTaskState = W_IDLE;
-      }
-      if (millis() - weatherTaskTimer > 10000) {
-        weatherClient.stop();
-        weatherTaskState = W_IDLE;
+      {
+        unsigned long startLoop = millis();
+        while (weatherClient.available() && millis() - startLoop < 5) {
+          weatherResponseBuffer += (char)weatherClient.read();
+        }
+        if (!weatherClient.connected() && !weatherClient.available()) {
+          parseWeatherData(weatherResponseBuffer);
+          weatherResponseBuffer = "";
+          weatherClient.stop();
+          weatherValid = true;
+          lastWeatherFetch = millis();
+          weatherTaskState = W_IDLE;
+        }
+        if (millis() - weatherTaskTimer > 15000) {
+          weatherClient.stop();
+          weatherResponseBuffer = "";
+          weatherTaskState = W_IDLE;
+        }
       }
       break;
   }
 }
 
+// Map WMO weather code to short text description
+String wmoCodeToText(int code) {
+  if (code == 0)  return F("Clear");
+  if (code <= 2)  return F("Partly Cloudy");
+  if (code == 3)  return F("Overcast");
+  if (code <= 49) return F("Foggy");
+  if (code <= 57) return F("Drizzle");
+  if (code <= 67) return F("Rain");
+  if (code <= 77) return F("Snow");
+  if (code <= 82) return F("Rain Showers");
+  if (code <= 86) return F("Snow Showers");
+  if (code <= 99) return F("Thunderstorm");
+  return F("Unknown");
+}
+
 void parseWeatherData(String result) {
-  // Strip headers (find double newline)
+  // Strip HTTP headers if still present (find double CRLF)
   int bodyPos = result.indexOf("\r\n\r\n");
   if (bodyPos != -1) {
     result = result.substring(bodyPos + 4);
@@ -1313,76 +1441,54 @@ void parseWeatherData(String result) {
   result.trim();
   if (result.length() == 0) return;
 
-  // Parse fields: temp|cond|hum|wind|press
-  int idx1 = result.indexOf('|');
-  int idx2 = result.indexOf('|', idx1 + 1);
-  int idx3 = result.indexOf('|', idx2 + 1);
-  int idx4 = result.indexOf('|', idx3 + 1);
-  if (idx1 < 0 || idx2 < 0 || idx3 < 0 || idx4 < 0) return;
+  // Parse Open-Meteo current weather JSON:
+  // {"current":{"temperature_2m":31.5,"relative_humidity_2m":58,
+  //             "weather_code":2,"wind_speed_10m":2.78,"surface_pressure":1007.4}}
+  // Full response is ~700 bytes. Use a filter to reduce RAM needed.
+  StaticJsonDocument<64> filter;
+  filter["current"]["temperature_2m"] = true;
+  filter["current"]["relative_humidity_2m"] = true;
+  filter["current"]["weather_code"] = true;
+  filter["current"]["wind_speed_10m"] = true;
+  filter["current"]["surface_pressure"] = true;
 
-  String tempStr   = result.substring(0, idx1);
-  String condStr   = result.substring(idx1 + 1, idx2);
-  String humStr    = result.substring(idx2 + 1, idx3);
-  String windStr   = result.substring(idx3 + 1, idx4);
-  String pressStr  = result.substring(idx4 + 1);
+  // Allocate on heap to avoid stack overflow
+  DynamicJsonDocument* doc = new DynamicJsonDocument(256);
+  if (!doc) return;
 
-  // Clean Temperature: remove degree symbol and 'C'
-  tempStr.replace("°C", "");
-  tempStr.replace("°", "");
-  tempStr.replace("C", "");
-  tempStr.trim();
-  weatherTemp = tempStr; // keep + or - sign if present
+  DeserializationError err = deserializeJson(*doc, result, DeserializationOption::Filter(filter));
+  if (err) { delete doc; return; }
 
-  // Clean Condition:
-  condStr.trim();
-  weatherCond = condStr;
+  JsonObject cur = (*doc)["current"];
+  if (cur.isNull()) { delete doc; return; }
 
-  // Clean Humidity: ensure '%' present
-  humStr.trim();
-  if (!humStr.endsWith("%")) {
-    weatherHum = humStr + "%";
+  // Temperature (°C)
+  float temp = cur["temperature_2m"] | -999.0f;
+  weatherTemp = (temp > -999.0f) ? String((int)round(temp)) : "N/A";
+
+  // Weather condition from WMO code
+  int code = cur["weather_code"] | -1;
+  weatherCond = (code >= 0) ? wmoCodeToText(code) : "";
+
+  // Humidity (%)
+  int hum = cur["relative_humidity_2m"] | -1;
+  weatherHum = (hum >= 0) ? (String(hum) + "%") : "N/A";
+
+  // Wind speed (m/s, already converted by wind_speed_unit=ms)
+  float wind = cur["wind_speed_10m"] | -1.0f;
+  weatherWind = (wind >= 0) ? String((int)round(wind)) : "N/A";
+
+  // Pressure (hPa -> mmHg: 1 hPa = 0.75006 mmHg)
+  float pressHpa = cur["surface_pressure"] | -1.0f;
+  if (pressHpa >= 0) {
+    weatherPress = String((int)round(pressHpa * 0.75006f));
   } else {
-    weatherHum = humStr;
-  }
-
-  // Clean Wind: extract numeric part (km/h)
-  String windNum = "";
-  for (uint i = 0; i < windStr.length(); ++i) {
-    char c = windStr.charAt(i);
-    if ((c >= '0' && c <= '9') || c == '.') {
-      windNum += c;
-    } else if (c == ' ' && windNum.length() > 0) {
-      break;
-    }
-  }
-  if (windNum.length() == 0) {
-    weatherWind = "N/A";
-  } else {
-    float windKmh = windNum.toFloat();
-    float windMs = windKmh / 3.6;
-    int windMsRounded = (int)round(windMs);
-    weatherWind = String(windMsRounded);
-  }
-
-  // Clean Pressure: extract numeric part (hPa)
-  String pressNum = "";
-  for (uint i = 0; i < pressStr.length(); ++i) {
-    char c = pressStr.charAt(i);
-    if ((c >= '0' && c <= '9') || c == '.') {
-      pressNum += c;
-    } else if (!pressNum.isEmpty()) {
-      break;
-    }
-  }
-  if (pressNum.length() == 0) {
     weatherPress = "N/A";
-  } else {
-    float pressHpa = pressNum.toFloat();
-    float pressMm = pressHpa * 0.75006;
-    int pressRounded = (int) round(pressMm);
-    weatherPress = String(pressRounded);
   }
+
+  delete doc;
 }
+
 
 String removeAccents(String str) {
   str.replace("á", "a"); str.replace("à", "a"); str.replace("ả", "a"); str.replace("ã", "a"); str.replace("ạ", "a");
@@ -1411,150 +1517,178 @@ void handleForecastTask() {
       break;
 
     case F_CONNECTING:
-      // This state now performs the entire blocking fetch and parse operation.
+      // Non-blocking: attempt TCP connect with short timeout, then send request
       {
           if (WiFi.status() != WL_CONNECTED) {
               lastForecastError = "No WiFi";
-              lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
+              lastForecastFetch = millis() - 3600000UL + 300000UL;
               forecastTaskState = F_IDLE;
               return;
           }
-
-          forecastClient.setInsecure();
-          // Use 16KB buffer to ensure SSL handshake success with Cloudflare
-          forecastClient.setBufferSizes(16384, 512);
-
-          if (!forecastClient.connect("wttr.in", 443)) {
+          if (weatherLat.length() == 0 || weatherLon.length() == 0) {
+              lastForecastError = "No Lat/Lon";
+              lastForecastFetch = millis() - 3600000UL + 300000UL;
+              forecastTaskState = F_IDLE;
+              return;
+          }
+          // 3000ms connect timeout: returns quickly when server is unreachable
+          if (!forecastClient.connect("api.open-meteo.com", 80, 3000)) {
               lastForecastError = "Connect Fail";
-              lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
+              lastForecastFetch = millis() - 3600000UL + 300000UL;
               forecastTaskState = F_IDLE;
               return;
           }
-
-          lastForecastError = "Connected...";
-          String encodedCity = removeAccents(city);
-          encodedCity.trim();
-          encodedCity.replace(" ", "-"); // Use hyphens for spaces
-          forecastClient.print("GET /" + encodedCity + "?format=j1&lang=en HTTP/1.1\r\n" +
-                               "Host: wttr.in\r\n" +
-                               "User-Agent: Mozilla/5.0 (compatible; ESP8266; +http://arduino.cc)\r\n" +
+          lastForecastError = "Fetching...";
+          String path = "/v1/forecast?latitude=" + weatherLat +
+                        "&longitude=" + weatherLon +
+                        "&daily=weather_code,temperature_2m_max,temperature_2m_min" +
+                        "&forecast_days=3&timezone=auto";
+          forecastClient.print("GET " + path + " HTTP/1.0\r\n" +
+                               "Host: api.open-meteo.com\r\n" +
+                               "User-Agent: ESP8266-Weather-Clock\r\n" +
                                "Accept: application/json\r\n" +
-                               "Accept-Encoding: identity\r\n" + // IMPORTANT: Request uncompressed data
                                "Connection: close\r\n\r\n");
-
-          // Find the end of the headers. This is a short blocking call.
-          if (!forecastClient.find("\r\n\r\n")) {
-              lastForecastError = "Header Fail";
-              forecastClient.stop();
-              lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
-              forecastTaskState = F_IDLE;
-              return;
-          }
-
-          // Now the stream is at the body, parse it directly with ArduinoJson
-          parseForecastData(forecastClient);
-
-          forecastClient.stop();
-          forecastTaskState = F_IDLE;
+          forecastResponseBuffer = "";
+          forecastResponseBuffer.reserve(1024);
+          forecastTaskTimer = millis();
+          forecastTaskState = F_WAIT_HEADER;
       }
       break;
-    
-    // These states are no longer used
+
     case F_WAIT_HEADER:
+      // Non-blocking: scan incoming bytes for end-of-headers marker, 5ms max per call
+      {
+        unsigned long tStart = millis();
+        while (forecastClient.available() && millis() - tStart < 5) {
+          char c = (char)forecastClient.read();
+          forecastResponseBuffer += c;
+          if (forecastResponseBuffer.endsWith("\r\n\r\n")) {
+            forecastResponseBuffer = ""; // discard headers, start collecting body
+            forecastTaskState = F_READ_BODY;
+            forecastTaskTimer = millis();
+            break;
+          }
+          // Cap header accumulation to avoid unbounded growth
+          if (forecastResponseBuffer.length() > 1024) {
+            forecastResponseBuffer = forecastResponseBuffer.substring(forecastResponseBuffer.length() - 4);
+          }
+        }
+        if (millis() - forecastTaskTimer > 10000) {
+          lastForecastError = "Header Timeout";
+          forecastClient.stop();
+          forecastResponseBuffer = "";
+          lastForecastFetch = millis() - 3600000UL + 300000UL;
+          forecastTaskState = F_IDLE;
+        }
+      }
+      break;
+
     case F_READ_BODY:
-      forecastTaskState = F_IDLE;
+      // Non-blocking: accumulate body bytes, 5ms max per call
+      {
+        unsigned long tStart = millis();
+        while (forecastClient.available() && millis() - tStart < 5) {
+          forecastResponseBuffer += (char)forecastClient.read();
+        }
+        // Guard against runaway responses (Open-Meteo body should be < 1500 bytes)
+        if (forecastResponseBuffer.length() > 2048) {
+          lastForecastError = "Body Too Large";
+          forecastClient.stop();
+          forecastResponseBuffer = "";
+          lastForecastFetch = millis() - 3600000UL + 300000UL;
+          forecastTaskState = F_IDLE;
+          return;
+        }
+        if (!forecastClient.connected() && !forecastClient.available()) {
+          // All data received - parse the buffered body
+          parseForecastData(forecastResponseBuffer);
+          forecastResponseBuffer = ""; // Free memory
+          forecastClient.stop();
+          forecastTaskState = F_IDLE;
+        } else if (millis() - forecastTaskTimer > 15000) {
+          lastForecastError = "Body Timeout";
+          forecastClient.stop();
+          forecastResponseBuffer = "";
+          lastForecastFetch = millis() - 3600000UL + 300000UL;
+          forecastTaskState = F_IDLE;
+        }
+      }
       break;
   }
 }
 
-void parseForecastData(WiFiClientSecure& stream) {
-  // Use a filter to reduce memory usage by ignoring unused fields
-  StaticJsonDocument<200> filter;
-  filter["weather"][0]["date"] = true;
-  filter["weather"][0]["maxtempC"] = true;
-  filter["weather"][0]["mintempC"] = true;
-  filter["weather"][0]["hourly"][0]["time"] = true;
-  filter["weather"][0]["hourly"][0]["weatherDesc"][0]["value"] = true;
+void parseForecastData(String& result) {
+  // Open-Meteo daily response structure:
+  // { "daily": { "time": [...], "weather_code": [...],
+  //              "temperature_2m_max": [...], "temperature_2m_min": [...] } }
 
-  // Allocate JsonDocument on the HEAP to avoid stack overflow.
-  // 5120 bytes is sufficient with filter
-  DynamicJsonDocument* doc = new DynamicJsonDocument(5120);
-  if (!doc) {
-    lastForecastError = "Heap Fail: JD"; // Failed to allocate JsonDocument
-    lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
+  result.trim();
+  if (result.length() == 0) {
+    lastForecastError = "Empty Body";
+    lastForecastFetch = millis() - 3600000UL + 300000UL;
     return;
   }
-  
-  // Parse JSON object directly from the stream with filter
-  DeserializationError error = deserializeJson(*doc, stream, DeserializationOption::Filter(filter));
+
+  // Use a filter to only parse what we need (saves heap)
+  StaticJsonDocument<100> filter;
+  filter["daily"]["time"] = true;
+  filter["daily"]["weather_code"] = true;
+  filter["daily"]["temperature_2m_max"] = true;
+  filter["daily"]["temperature_2m_min"] = true;
+
+  // Allocate JsonDocument on the HEAP to avoid stack overflow
+  DynamicJsonDocument* doc = new DynamicJsonDocument(1024);
+  if (!doc) {
+    lastForecastError = "Heap Fail: JD";
+    lastForecastFetch = millis() - 3600000UL + 300000UL;
+    return;
+  }
+
+  DeserializationError error = deserializeJson(*doc, result, DeserializationOption::Filter(filter));
 
   if (error) {
     lastForecastError = "JSON Err: ";
     lastForecastError += error.c_str();
-    lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
-    delete doc; // Free memory
+    lastForecastFetch = millis() - 3600000UL + 300000UL;
+    delete doc;
     return;
   }
   
-  JsonArray weather = (*doc)["weather"];
-  if (weather.isNull() || weather.size() < 3) {
-    lastForecastError = "No Weather Arr";
-    lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
-    delete doc; // Free memory
+  JsonObject daily = (*doc)["daily"];
+  if (daily.isNull()) {
+    lastForecastError = "No daily obj";
+    lastForecastFetch = millis() - 3600000UL + 300000UL;
+    delete doc;
+    return;
+  }
+
+  JsonArray times    = daily["time"];
+  JsonArray codes    = daily["weather_code"];
+  JsonArray maxTemps = daily["temperature_2m_max"];
+  JsonArray minTemps = daily["temperature_2m_min"];
+
+  if (times.isNull() || times.size() < 3) {
+    lastForecastError = "No Days";
+    lastForecastFetch = millis() - 3600000UL + 300000UL;
+    delete doc;
     return;
   }
   
   for (int i = 0; i < 3; i++) {
-    JsonObject day_forecast = weather[i];
-    if (day_forecast.isNull()) {
-        forecasts[i].fullText = "";
-        continue;
-    }
+    String date = times[i].as<String>();
+    String d = date.substring(5); // MM-DD
+    int wCode = codes[i] | 0;
+    String condText = wmoCodeToText(wCode);
+    int maxT = (int)round(maxTemps[i].as<float>());
+    int minT = (int)round(minTemps[i].as<float>());
 
-    // Extract Date
-    const char* date_p = day_forecast["date"];
-    String date = date_p ? String(date_p) : "";
-
-    // Extract Max Temp (Search from date position)
-    const char* maxT_p = day_forecast["maxtempC"];
-    String maxT = maxT_p ? String(maxT_p) : "N/A";
-
-    // Extract Min Temp (Search from date position)
-    const char* minT_p = day_forecast["mintempC"];
-    String minT = minT_p ? String(minT_p) : "N/A";
-
-    // Extract Hourly descriptions
-    String morn = "", noon = "", aft = "", eve = "";
-    JsonArray hourly = day_forecast["hourly"];
-    if (!hourly.isNull()) {
-      for(JsonObject h : hourly) {
-          const char* timeStr = h["time"];
-          if (!timeStr) continue;
-          int timeInt = atoi(timeStr);
-          
-          const char* desc_p = h["weatherDesc"][0]["value"];
-          String desc = desc_p ? String(desc_p) : "";
-
-          if (timeInt == 900) morn = desc;
-          else if (timeInt == 1200) noon = desc;
-          else if (timeInt == 1500) aft = desc;
-          else if (timeInt == 2100) eve = desc;
-      }
-    }
-
-    // Construct full text
-    // Format: "MM-DD: min/max C, Sang: ..., Trua: ..., Chieu: ..., Toi: ..."
-    String d = date.substring(5);
-    String text = d + F(": ") + minT + F("/") + maxT + String((char)247) + F("C");
-    text += F(", Morn: ") + removeAccents(morn);
-    text += F(", Noon: ") + removeAccents(noon);
-    text += F(", Aft: ") + removeAccents(aft);
-    text += F(", Eve: ") + removeAccents(eve);
+    String text = d + F(": ") + String(minT) + F("/") + String(maxT) + String((char)247) + F("C");
+    text += F(", ") + condText;
     
     forecasts[i].fullText = text;
   }
 
-  delete doc; // IMPORTANT: Free the memory
+  delete doc; // IMPORTANT: Free the heap memory
 
   if (forecasts[0].fullText.length() > 0) {
      forecastValid = true;
@@ -1562,9 +1696,10 @@ void parseForecastData(WiFiClientSecure& stream) {
      lastForecastFetch = millis();
   } else {
      lastForecastError = "Parse Fail";
-     lastForecastFetch = millis() - 3600000UL + 300000UL; // Retry in 5 mins
+     lastForecastFetch = millis() - 3600000UL + 300000UL;
   }
 }
+
 
 void updateGreeting() {
   if (WiFi.status() != WL_CONNECTED || greetingUrl == "") {
