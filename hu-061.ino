@@ -1341,8 +1341,8 @@ void handleWeatherTask() {
     case W_CONNECTING:
       if (WiFi.status() == WL_CONNECTED && weatherLat.length() > 0 && weatherLon.length() > 0) {
         // Open-Meteo: free, no API key, plain HTTP port 80
-        // 3000ms connect timeout prevents long blocking when server is unreachable
-        if (weatherClient.connect("api.open-meteo.com", 80, 3000)) {
+        weatherClient.setTimeout(5000); // Limit read blocking to 5s
+        if (weatherClient.connect("api.open-meteo.com", 80)) {
            String path = "/v1/forecast?latitude=" + weatherLat +
                          "&longitude=" + weatherLon +
                          "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,surface_pressure" +
@@ -1532,7 +1532,8 @@ void handleForecastTask() {
               return;
           }
           // 3000ms connect timeout: returns quickly when server is unreachable
-          if (!forecastClient.connect("api.open-meteo.com", 80, 3000)) {
+          forecastClient.setTimeout(5000); // Limit read blocking to 5s
+          if (!forecastClient.connect("api.open-meteo.com", 80)) {
               lastForecastError = "Connect Fail";
               lastForecastFetch = millis() - 3600000UL + 300000UL;
               forecastTaskState = F_IDLE;
