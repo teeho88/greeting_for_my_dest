@@ -67,7 +67,7 @@ const int ADDR_LON = 930;  // 17 bytes: 1 length + up to 16 chars for longitude 
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.43";
+const String firmwareVersion = "v1.1.44";
 String timeHeaderMsg = "A wonderful day with LOVE <3";
 
 // Display:
@@ -476,8 +476,8 @@ void loop() {
 
   // Switch screen logic
   unsigned long interval = 15000;
-  if (currentScreen == 2) interval = 45000; // Longer duration for forecast screen
-  if (currentScreen == 3) interval = 45000; // Greeting screen duration
+  if (currentScreen == 2) interval = 30000; // Longer duration for forecast screen
+  if (currentScreen == 3) interval = 60000; // Greeting screen duration
   if (currentScreen == 4) interval = 10000; // Duration for lucky number
 
   if (now - lastScreenSwitch > interval) {
@@ -1300,7 +1300,7 @@ void drawGreetingScreen() {
 
   // Update scroll position
   if (millis() - lastScroll > 13) {
-    scrollX -= 2;
+    scrollX -= 4;
     lastScroll = millis();
   }
 
