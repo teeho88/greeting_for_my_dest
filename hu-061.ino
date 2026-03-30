@@ -67,7 +67,7 @@ const int ADDR_LON = 930;  // 17 bytes: 1 length + up to 16 chars for longitude 
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 const char *AP_SSID = "Puppy's clock";  // Access Point SSID for config mode
-const String firmwareVersion = "v1.1.44";
+const String firmwareVersion = "v1.1.45";
 String timeHeaderMsg = "A wonderful day with LOVE <3";
 
 // Display:
@@ -136,7 +136,7 @@ struct EffectItem {
   float y;
   float speed;
   uint8_t size;
-  uint8_t type; // 0 for Coin, 1 for Red Envelope
+  uint8_t type;
 };
 EffectItem items[NUM_ITEMS];
 bool itemsInitialized = false;
@@ -963,14 +963,14 @@ void drawSleepConfirmScreen() {
 }
 
 void drawDynamicBackground() {
-  // Draw Tet Background (Coins and Red Envelopes flying up)
+  // Draw Heart Background (Hearts flying up with 4 sizes and 4 angles)
   if (!itemsInitialized) {
     for (int i = 0; i < NUM_ITEMS; i++) {
       items[i].x = random(0, 128);
       items[i].y = random(0, 64);
       items[i].speed = random(4, 12) / 10.0;
-      items[i].size = random(2, 5);
-      items[i].type = random(0, 2); // 0: Coin, 1: Red Envelope
+      items[i].size = random(0, 4); // 0 to 3 (4 sizes)
+      items[i].type = random(0, 4); // 0 to 3 (4 angles)
     }
     itemsInitialized = true;
   }
@@ -978,16 +978,28 @@ void drawDynamicBackground() {
   for (int i = 0; i < NUM_ITEMS; i++) {
     int x = (int)items[i].x;
     int y = (int)items[i].y;
-    uint8_t s = items[i].size;
+    uint8_t size_idx = items[i].size;
+    uint8_t angle_idx = items[i].type;
 
-    if (items[i].type == 0) {
-      // Draw Coin (Đồng xu) - Circle with a square hole
-      display.drawCircle(x, y, s, SSD1306_WHITE);
-      display.drawRect(x - 1, y - 1, 3, 3, SSD1306_WHITE);
-    } else {
-      // Draw Red Envelope (Lì xì) - Small rectangle
-      display.drawRect(x, y, s + 1, s + 4, SSD1306_WHITE);
-      display.drawLine(x, y + 1, x + s + 1, y + 1, SSD1306_WHITE); // Flap line
+    int w = 5 + size_idx * 2;
+    const char* pat = "";
+    if (size_idx == 0) pat = "0101011111011100010000000";
+    else if (size_idx == 1) pat = "0110110111111111111110111110001110000010000000000";
+    else if (size_idx == 2) pat = "00110110001111111011111111111111111101111111000111110000011100000001000000000000";
+    else pat = "00111011100011111111101111111111111111111111111111111101111111110001111111000001111100000001110000000001000000000000000";
+
+    for (int py = 0; py < w; py++) {
+      for (int px = 0; px < w; px++) {
+        if (pat[py * w + px] == '1') {
+          int dx = px - w / 2;
+          int dy = py - w / 2;
+          int rx = dx, ry = dy;
+          if (angle_idx == 1) { rx = -dy; ry = dx; }
+          else if (angle_idx == 2) { rx = -dx; ry = -dy; }
+          else if (angle_idx == 3) { rx = dy; ry = -dx; }
+          display.drawPixel(x + rx, y + ry, SSD1306_WHITE);
+        }
+      }
     }
 
     items[i].y -= items[i].speed;
@@ -995,8 +1007,8 @@ void drawDynamicBackground() {
       items[i].y = 64 + random(0, 20);
       items[i].x = random(0, 128);
       items[i].speed = random(4, 12) / 10.0;
-      items[i].size = random(2, 5);
-      items[i].type = random(0, 2);
+      items[i].size = random(0, 4);
+      items[i].type = random(0, 4);
     }
   }
 }
